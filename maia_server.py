@@ -160,19 +160,16 @@ class ConnectionHandler:
             except ValueError as e:
                 print(f"  Bad FEN: {e}")
 
+        elif msg.startswith("setelo "):
+            parts = msg.split()
+            if len(parts) == 3:
+                self.engine.set_elo(int(parts[1]), int(parts[2]))
+                print(f"  Elo set: self={parts[1]} oppo={parts[2]}")
+
         elif msg.startswith("go"):
             if not self.has_lock:
                 await ws.send("error no lock")
                 return
-
-            parts = msg.split()
-            movetime = 1000
-            for i, p in enumerate(parts):
-                if p == "movetime" and i + 1 < len(parts):
-                    movetime = int(parts[i + 1])
-
-            elo = 1500 + min(int((movetime / 20000) * 1300), 1300)
-            self.engine.set_elo(elo)
 
             best = self.engine.predict(self.board)
             print(f"  -> bestmove {best}")
