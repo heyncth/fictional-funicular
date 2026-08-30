@@ -4,7 +4,7 @@
 // @grant       none
 // @require     https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js
 // @require     https://cdn.jsdelivr.net/npm/onnxruntime-web@1.16.3/dist/ort.min.js
-// @require     https://raw.githubusercontent.com/heyncth/fictional-funicular/main/maia-engine.js
+// @require     https://raw.githubusercontent.com/heyncth/fictional-funicular/refs/heads/main/maia-engine.js
 // @require     https://raw.githubusercontent.com/0mlml/vasara/main/vasara.js
 // @version     2.3
 // @author      0mlml

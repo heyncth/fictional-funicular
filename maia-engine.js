@@ -1,8 +1,9 @@
 // Maia-3 Chess Engine — ONNX browser inference via onnxruntime-web
 // Same public API as betafishEngine. Requires chess.js and onnxruntime-web via @require.
 
-const maiaEngine = function() {
+var _nativeFetch = window.fetch.bind(window);
 
+const maiaEngine = function() {
   var MODEL_URL = 'https://raw.githubusercontent.com/heyncth/fictional-funicular/main/models/maia3-23m.fp16.onnx';
   var WASM_BASE = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.16.3/dist/';
   var START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
@@ -164,7 +165,7 @@ const maiaEngine = function() {
     var wasmUrl = WASM_BASE + 'ort-wasm-simd-threaded.wasm';
     console.log('[Maia] Fetching WASM from:', wasmUrl);
 
-    var modelFetch = fetch(MODEL_URL).then(function(r) {
+    var modelFetch = _nativeFetch(MODEL_URL).then(function(r) {
       if (!r.ok) throw new Error('Model fetch failed: ' + r.status);
       return r.arrayBuffer();
     }).then(function(buf) {
@@ -172,7 +173,7 @@ const maiaEngine = function() {
       return buf;
     });
 
-    fetch(wasmUrl).then(function(r) {
+    _nativeFetch(wasmUrl).then(function(r) {
       if (!r.ok) throw new Error('WASM fetch failed: ' + r.status);
       return r.arrayBuffer();
     }).then(function(wasmBuf) {
