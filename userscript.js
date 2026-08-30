@@ -335,65 +335,7 @@
     }
   }
 
-  const maiaWebWorkerFunc = () => {
-    importScripts(
-      'https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js',
-      'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.24.2/dist/ort.min.js'
-    );
-
-    self.instance = maiaEngine();
-    self.thinking = false;
-
-    const postError = (message) => self.postMessage({ type: 'ERROR', payload: message });
-    const isInstanceInitialized = () => self.instance || postError('Maia not initialized.');
-
-    self.addEventListener('message', e => {
-      if (!isInstanceInitialized()) return;
-
-      switch (e.data.type) {
-        case 'FEN':
-          if (!e.data.payload) return postError('No FEN provided.');
-          self.instance.setFEN(e.data.payload);
-          break;
-        case 'GETMOVE':
-          if (self.thinking) return postError('Maia is already calculating.');
-          self.postMessage({ type: 'MESSAGE', payload: 'Maia received request for best move. Calculating...' });
-          self.thinking = true;
-          const move = self.instance.getBestMove();
-          self.thinking = false;
-          self.postMessage({ type: 'MOVE', payload: { move, toMove: self.instance.getFEN().split(' ')[1] } });
-          break;
-        case 'THINKINGTIME':
-          if (isNaN(e.data.payload)) return postError('Invalid thinking time provided.');
-          self.instance.setThinkingTime(e.data.payload / 1000);
-          self.postMessage({ type: 'DEBUG', payload: `Maia thinking time set to ${e.data.payload}ms.` });
-          break;
-        default:
-          postError('Invalid message type.');
-      }
-    });
-  };
-
-  const maiaWorkerBlob = new Blob([`const maiaEngine=${maiaEngine.toString()};(${maiaWebWorkerFunc.toString()})();`], { type: 'application/javascript' });
-  const maiaWorkerURL = URL.createObjectURL(maiaWorkerBlob);
-  const maiaWorker = new Worker(maiaWorkerURL);
-
-  maiaWorker.onmessage = e => {
-    switch (e.data.type) {
-      case 'DEBUG':
-      case 'MESSAGE':
-        console.info(e.data.payload);
-        break;
-      case 'ERROR':
-        console.error(e.data.payload);
-        break;
-      case 'MOVE':
-        const { move, toMove } = e.data.payload;
-        addToConsole(`Maia computed best for ${toMove === 'w' ? 'white' : 'black'}: ${move}`);
-        handleEngineMove(move);
-        break;
-    }
-  };
+  const maiaInstance = maiaEngine();
 
   const originalFetch = window.fetch;
   window.fetch = async (...args) => {
@@ -710,7 +652,7 @@
       step: 100,
       showOnlyIf: () => !vs.queryConfigKey(namespace + '_legitmode') && vs.queryConfigKey(namespace + '_whichengine') === 'maia',
       callback: () => {
-        maiaWorker.postMessage({ type: 'THINKINGTIME', payload: parseFloat(vs.queryConfigKey(namespace + '_maiathinkingtime')) });
+        maiaInstance.setThinkingTime(parseFloat(vs.queryConfigKey(namespace + '_maiathinkingtime')));
       }
     });
 
@@ -1061,8 +1003,14 @@
     else lastEngineMoveCalcStartTime = performance.now();
 
     if (vs.queryConfigKey(namespace + '_whichengine') === 'maia') {
-      maiaWorker.postMessage({ type: 'FEN', payload: fen });
-      maiaWorker.postMessage({ type: 'GETMOVE' });
+      maiaInstance.setFEN(fen);
+      const move = maiaInstance.getBestMove();
+      if (move) {
+        addToConsole(`Maia computed best for ${fen.split(' ')[1] === 'w' ? 'white' : 'black'}: ${move}`);
+        handleEngineMove(move);
+      } else {
+        addToConsole('Maia: model still loading, retrying...');
+      }
     } else if (vs.queryConfigKey(namespace + '_whichengine') === 'external') {
       if (!externalEngineName) {
         addToConsole('External engine appears to be disconnected. Please check the config.');
