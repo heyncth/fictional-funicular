@@ -189,11 +189,15 @@ def main():
     engine = MaiaEngine(MODEL_PATH)
     handler = ConnectionHandler(engine)
 
+    async def handle_connection(ws):
+        handler = ConnectionHandler(engine)
+        await handler.handle(ws)
+
     print(f"WebSocket server: ws://{WS_HOST}:{WS_PORT}")
     print("Chesshook external engine URL: ws://localhost:8080/ws")
 
     async def run():
-        async with websockets.serve(handler.handle, WS_HOST, WS_PORT):
+        async with websockets.serve(handle_connection, WS_HOST, WS_PORT):
             await asyncio.Future()
 
     asyncio.run(run())
