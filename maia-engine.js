@@ -4,11 +4,15 @@
 const maiaEngine = function() {
 
   var MODEL_URL = 'https://raw.githubusercontent.com/heyncth/fictional-funicular/main/models/maia3-23m.fp16.onnx';
-  var WASM_PATHS = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.24.2/dist/';
+  var WASM_BASE = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.24.2/dist/';
 
-  // Set WASM paths before any ORT init
+  // Set WASM paths before any ORT init — use object form so ORT loads mjs from CDN
   if (typeof ort !== 'undefined' && ort.env && ort.env.wasm) {
-    ort.env.wasm.wasmPaths = WASM_PATHS;
+    ort.env.wasm.wasmPaths = {
+      mjs: WASM_BASE + 'ort-wasm-simd-threaded.jsep.mjs',
+      wasm: WASM_BASE + 'ort-wasm-simd-threaded.jsep.wasm',
+    };
+    ort.env.wasm.numThreads = 1;
   }
   var START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
@@ -166,8 +170,34 @@ const maiaEngine = function() {
     if (_session || _modelLoading) return;
     _modelLoading = true;
 
-    // Tell ORT where to find WASM files
+    // Fetch WASM binary via GM_xmlhttpRequest (bypasses CSP), then pass directly to ORT
+    var wasmUrl = WASM_BASE + 'ort-wasm-simd-threaded.jsep.wasm';
+    if (typeof GM_xmlhttpRequest !== 'undefined') {
+      GM_xmlhttpRequest({
+        method: 'GET',
+        url: wasmUrl,
+        responseType: 'arraybuffer',
+        onload: function(res) {
+          if (res.status === 200 || res.status === 0) {
+            ort.env.wasm.wasmBinary = res.response;
+            _doCreateSession();
+          } else {
+            console.error('[Maia] Failed to fetch WASM binary:', res.status);
+            _modelLoading = false;
+          }
+        },
+        onerror: function(err) {
+          console.error('[Maia] GM_xmlhttpRequest error for WASM:', err);
+          _modelLoading = false;
+        }
+      });
+    } else {
+      // Fallback: try direct fetch (may fail due to CSP)
+      _doCreateSession();
+    }
+  }
 
+  function _doCreateSession() {
     ort.InferenceSession.create(MODEL_URL, {
       graphOptimizationLevel: 'basic',
       executionProviders: ['wasm'],
