@@ -181,11 +181,13 @@ const maiaEngine = function() {
       ort.env.wasm.wasmBinary = wasmBuf;
       return modelFetch;
     }).then(function(modelBuf) {
+      window.fetch = _nativeFetch;
       return ort.InferenceSession.create(modelBuf, {
         graphOptimizationLevel: 'basic',
         executionProviders: ['wasm'],
       });
     }).then(function(session) {
+      window.fetch = _nativeFetch;
       _session = session;
       _modelLoading = false;
       console.log('[Maia] Model loaded');
