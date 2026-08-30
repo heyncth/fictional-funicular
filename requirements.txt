@@ -1,0 +1,4 @@
+chess
+onnxruntime
+numpy
+websockets
