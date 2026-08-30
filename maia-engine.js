@@ -4,17 +4,7 @@
 const maiaEngine = function() {
 
   var MODEL_URL = 'https://raw.githubusercontent.com/heyncth/fictional-funicular/main/models/maia3-23m.fp16.onnx';
-  var WASM_BASE = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.24.2/dist/';
-
-  // Tell ORT where to find WASM files — string prefix form
-  if (typeof ort !== 'undefined' && ort.env && ort.env.wasm) {
-    console.log('[Maia] Before setting wasmPaths:', JSON.stringify(ort.env.wasm.wasmPaths));
-    ort.env.wasm.wasmPaths = WASM_BASE;
-    ort.env.wasm.numThreads = 1;
-    console.log('[Maia] After setting wasmPaths:', ort.env.wasm.wasmPaths, 'ort.env.wasm:', JSON.stringify(ort.env.wasm));
-  } else {
-    console.error('[Maia] ort.env.wasm not available!');
-  }
+  var WASM_BASE = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.16.3/dist/';
   var START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
   // Piece index for Maia-3 token encoding
@@ -171,12 +161,29 @@ const maiaEngine = function() {
     if (_session || _modelLoading) return;
     _modelLoading = true;
 
-    console.log('[Maia] Loading model from', MODEL_URL);
-    console.log('[Maia] WASM paths:', ort.env.wasm.wasmPaths);
+    var wasmUrl = WASM_BASE + 'ort-wasm-simd-threaded.wasm';
+    console.log('[Maia] Fetching WASM from:', wasmUrl);
 
-    ort.InferenceSession.create(MODEL_URL, {
-      graphOptimizationLevel: 'basic',
-      executionProviders: ['wasm'],
+    var modelFetch = fetch(MODEL_URL).then(function(r) {
+      if (!r.ok) throw new Error('Model fetch failed: ' + r.status);
+      return r.arrayBuffer();
+    }).then(function(buf) {
+      console.log('[Maia] Model fetched, size:', buf.byteLength);
+      return buf;
+    });
+
+    fetch(wasmUrl).then(function(r) {
+      if (!r.ok) throw new Error('WASM fetch failed: ' + r.status);
+      return r.arrayBuffer();
+    }).then(function(wasmBuf) {
+      console.log('[Maia] WASM fetched, size:', wasmBuf.byteLength);
+      ort.env.wasm.wasmBinary = wasmBuf;
+      return modelFetch;
+    }).then(function(modelBuf) {
+      return ort.InferenceSession.create(modelBuf, {
+        graphOptimizationLevel: 'basic',
+        executionProviders: ['wasm'],
+      });
     }).then(function(session) {
       _session = session;
       _modelLoading = false;
