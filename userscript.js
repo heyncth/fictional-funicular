@@ -2,7 +2,7 @@
 // @name        Chesshook
 // @include    	https://www.chess.com/*
 // @grant       none
-// @require     https://heyncth.github.io/fictional-funicular/maia-engine.js
+// @require     https://raw.githubusercontent.com/heyncth/fictional-funicular/main/maia-engine.js
 // @require     https://raw.githubusercontent.com/0mlml/vasara/main/vasara.js
 // @version     2.3
 // @author      0mlml

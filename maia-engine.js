@@ -3,7 +3,7 @@
 
 const maiaEngine = function() {
 
-  var MODEL_URL = 'https://heyncth.github.io/fictional-funicular/models/maia3-23m.fp16.onnx';
+  var MODEL_URL = 'https://raw.githubusercontent.com/heyncth/fictional-funicular/main/models/maia3-23m.fp16.onnx';
   var START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
   // Piece index for Maia-3 token encoding
