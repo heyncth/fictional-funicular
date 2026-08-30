@@ -2,9 +2,7 @@
 // @name        Chesshook
 // @include    	https://www.chess.com/*
 // @grant       none
-// @require     https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js
-// @require     https://cdn.jsdelivr.net/npm/onnxruntime-web@1.16.3/dist/ort.min.js
-// @require     https://raw.githubusercontent.com/heyncth/fictional-funicular/refs/heads/main/maia-engine.js
+// @require     https://raw.githubusercontent.com/heyncth/pool-hall-manager/refs/heads/main/beta.js
 // @require     https://raw.githubusercontent.com/0mlml/vasara/main/vasara.js
 // @version     2.3
 // @author      0mlml
@@ -337,7 +335,68 @@
     }
   }
 
-  const maiaInstance = maiaEngine();
+  const betafishWebWorkerFunc = () => {
+    self.instance = betafishEngine();
+    self.thinking = false;
+
+    const postError = (message) => self.postMessage({ type: 'ERROR', payload: message });
+    const isInstanceInitialized = () => self.instance || postError('Betafish not initialized.');
+
+    self.addEventListener('message', e => {
+      if (!isInstanceInitialized()) return;
+
+      switch (e.data.type) {
+        case 'FEN':
+          if (!e.data.payload) return postError('No FEN provided.');
+          self.instance.setFEN(e.data.payload);
+          break;
+        case 'GETMOVE':
+          if (self.thinking) return postError('Betafish is already calculating.');
+          self.postMessage({ type: 'MESSAGE', payload: 'Betafish received request for best move. Calculating...' });
+          self.thinking = true;
+          const move = self.instance.getBestMove();
+          self.thinking = false;
+          self.postMessage({ type: 'MOVE', payload: { move, toMove: self.instance.getFEN().split(' ')[1] } });
+          break;
+        case 'THINKINGTIME':
+          if (isNaN(e.data.payload)) return postError('Invalid thinking time provided.');
+          self.instance.setThinkingTime(e.data.payload / 1000);
+          self.postMessage({ type: 'DEBUG', payload: `Betafish thinking time set to ${e.data.payload}ms.` });
+          break;
+        default:
+          postError('Invalid message type.');
+      }
+    });
+  };
+
+  const betafishWorkerBlob = new Blob([`const betafishEngine=${betafishEngine.toString()};(${betafishWebWorkerFunc.toString()})();`], { type: 'application/javascript' });
+  const betafishWorkerURL = URL.createObjectURL(betafishWorkerBlob);
+  const betafishWorker = new Worker(betafishWorkerURL);
+
+  const betafishPieces = { EMPTY: 0, wP: 1, wN: 2, wB: 3, wR: 4, wQ: 5, wK: 6, bP: 7, bN: 8, bB: 9, bR: 10, bQ: 11, bK: 12 };
+
+  betafishWorker.onmessage = e => {
+    switch (e.data.type) {
+      case 'DEBUG':
+      case 'MESSAGE':
+        console.info(e.data.payload);
+        break;
+      case 'ERROR':
+        console.error(e.data.payload);
+        break;
+      case 'MOVE':
+        const { move, toMove } = e.data.payload;
+        const squareToRankFile = sq => [Math.floor((sq - 21) / 10), sq - 21 - Math.floor((sq - 21) / 10) * 10];
+        const from = squareToRankFile(move & 0x7f);
+        const to = squareToRankFile((move >> 7) & 0x7f);
+        const promoted = (move >> 20) & 0xf;
+        const promotedString = promoted !== 0 ? Object.entries(betafishPieces).find(([key, value]) => value === promoted)?.[0].toLowerCase()[1] || '' : '';
+        const uciMove = coordsToUCIMoveString(from, to, promotedString);
+        addToConsole(`Betafish computed best for ${toMove === 'w' ? 'white' : 'black'}: ${uciMove}`);
+        handleEngineMove(uciMove);
+        break;
+    }
+  };
 
   const originalFetch = window.fetch;
   window.fetch = async (...args) => {
@@ -623,7 +682,7 @@
       display: 'Which Engine: ',
       description: 'Which engine to use',
       value: 'none',
-      options: ['maia', 'random', 'cccp', 'external'],
+      options: ['betafish', 'random', 'cccp', 'external'],
       showOnlyIf: () => !vs.queryConfigKey(namespace + '_legitmode') && !vs.queryConfigKey(namespace + '_puzzlemode'),
       callback: () => {
         if (vs.queryConfigKey(namespace + '_whichengine') !== 'external') {
@@ -644,17 +703,17 @@
     });
 
     vs.registerConfigValue({
-      key: namespace + '_maiathinkingtime',
+      key: namespace + '_betafishthinkingtime',
       type: 'number',
-      display: 'Maia Thinking Time: ',
+      display: 'Betafish Thinking Time: ',
       description: 'The amount of time in ms to think for each move',
       value: 1000,
       min: 0,
       max: 20000,
       step: 100,
-      showOnlyIf: () => !vs.queryConfigKey(namespace + '_legitmode') && vs.queryConfigKey(namespace + '_whichengine') === 'maia',
+      showOnlyIf: () => !vs.queryConfigKey(namespace + '_legitmode') && vs.queryConfigKey(namespace + '_whichengine') === 'betafish',
       callback: () => {
-        maiaInstance.setThinkingTime(parseFloat(vs.queryConfigKey(namespace + '_maiathinkingtime')));
+        betafishWorker.postMessage({ type: 'THINKINGTIME', payload: parseFloat(vs.queryConfigKey(namespace + '_betafishthinkingtime')) });
       }
     });
 
@@ -1004,15 +1063,9 @@
     if (vs.queryConfigKey(namespace + '_automoveinstamovestart') && parseInt(fen.split(' ')[5]) < 6) lastEngineMoveCalcStartTime = 0;
     else lastEngineMoveCalcStartTime = performance.now();
 
-    if (vs.queryConfigKey(namespace + '_whichengine') === 'maia') {
-      maiaInstance.setFEN(fen);
-      const move = maiaInstance.getBestMove();
-      if (move) {
-        addToConsole(`Maia computed best for ${fen.split(' ')[1] === 'w' ? 'white' : 'black'}: ${move}`);
-        handleEngineMove(move);
-      } else {
-        addToConsole('Maia: model still loading, retrying...');
-      }
+    if (vs.queryConfigKey(namespace + '_whichengine') === 'betafish') {
+      betafishWorker.postMessage({ type: 'FEN', payload: fen });
+      betafishWorker.postMessage({ type: 'GETMOVE' });
     } else if (vs.queryConfigKey(namespace + '_whichengine') === 'external') {
       if (!externalEngineName) {
         addToConsole('External engine appears to be disconnected. Please check the config.');
