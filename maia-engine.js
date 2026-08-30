@@ -4,6 +4,12 @@
 const maiaEngine = function() {
 
   var MODEL_URL = 'https://raw.githubusercontent.com/heyncth/fictional-funicular/main/models/maia3-23m.fp16.onnx';
+  var WASM_PATHS = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.24.2/dist/';
+
+  // Set WASM paths before any ORT init
+  if (typeof ort !== 'undefined' && ort.env && ort.env.wasm) {
+    ort.env.wasm.wasmPaths = WASM_PATHS;
+  }
   var START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
   // Piece index for Maia-3 token encoding
@@ -160,14 +166,11 @@ const maiaEngine = function() {
     if (_session || _modelLoading) return;
     _modelLoading = true;
 
-    // Tell ORT where to find WASM files (needed inside Blob-based Web Workers)
-    if (typeof ort !== 'undefined' && ort.env && ort.env.wasm) {
-      ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.24.2/dist/';
-    }
+    // Tell ORT where to find WASM files
 
     ort.InferenceSession.create(MODEL_URL, {
       graphOptimizationLevel: 'basic',
-      executionProviders: ['webgpu', 'wasm'],
+      executionProviders: ['wasm'],
     }).then(function(session) {
       _session = session;
       _modelLoading = false;
