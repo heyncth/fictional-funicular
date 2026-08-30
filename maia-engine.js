@@ -8,8 +8,12 @@ const maiaEngine = function() {
 
   // Tell ORT where to find WASM files — string prefix form
   if (typeof ort !== 'undefined' && ort.env && ort.env.wasm) {
+    console.log('[Maia] Before setting wasmPaths:', JSON.stringify(ort.env.wasm.wasmPaths));
     ort.env.wasm.wasmPaths = WASM_BASE;
     ort.env.wasm.numThreads = 1;
+    console.log('[Maia] After setting wasmPaths:', ort.env.wasm.wasmPaths, 'ort.env.wasm:', JSON.stringify(ort.env.wasm));
+  } else {
+    console.error('[Maia] ort.env.wasm not available!');
   }
   var START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
