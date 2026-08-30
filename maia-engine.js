@@ -160,6 +160,11 @@ const maiaEngine = function() {
     if (_session || _modelLoading) return;
     _modelLoading = true;
 
+    // Tell ORT where to find WASM files (needed inside Blob-based Web Workers)
+    if (typeof ort !== 'undefined' && ort.env && ort.env.wasm) {
+      ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.24.2/dist/';
+    }
+
     ort.InferenceSession.create(MODEL_URL, {
       graphOptimizationLevel: 'basic',
       executionProviders: ['webgpu', 'wasm'],
