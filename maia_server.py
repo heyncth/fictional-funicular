@@ -190,7 +190,7 @@ def main():
     handler = ConnectionHandler(engine)
 
     print(f"WebSocket server: ws://{WS_HOST}:{WS_PORT}")
-    print("Chesshook external engine URL: ws://localhost:8080")
+    print("Chesshook external engine URL: ws://localhost:8080/ws")
 
     async def run():
         async with websockets.serve(handler.handle, WS_HOST, WS_PORT):
