@@ -613,38 +613,12 @@
     });
 
     vs.registerConfigValue({
-      key: namespace + '_whichengine',
-      type: 'dropdown',
-      display: 'Which Engine: ',
-      description: 'Which engine to use',
-      value: 'none',
-      options: ['random', 'cccp', 'external'],
-      showOnlyIf: () => true,
-      callback: () => {
-        if (vs.queryConfigKey(namespace + '_whichengine') !== 'external') {
-          return;
-        }
-        if (!vs.queryConfigKey(namespace + '_externalengineurl')) {
-          addToConsole('Please set the path to the external engine in the config.');
-          return;
-        }
-        externalEngineWorker.postMessage({ type: 'INIT', payload: vs.queryConfigKey(namespace + '_externalengineurl') });
-
-        if (!vs.queryConfigKey(namespace + '_haswarnedaboutexternalengine') || vs.queryConfigKey(namespace + '_haswarnedaboutexternalengine') === 'false') {
-          addToConsole('Please note that the external engine is not for the faint of heart. It requires tinkering and the user to host the chesshook intermediary server.');
-          alert('Please note that the external engine is not for the faint of heart. It requires tinkering and the user to host the chesshook intermediary server.')
-          vs.setConfigValue(namespace + '_haswarnedaboutexternalengine', true);
-        }
-      }
-    });
-
-    vs.registerConfigValue({
       key: namespace + '_externalengineurl',
       type: 'text',
       display: 'External Engine URL: ',
       description: 'The URL of the external engine',
       value: 'ws://localhost:8080/ws',
-      showOnlyIf: () => vs.queryConfigKey(namespace + '_whichengine') === 'external',
+      showOnlyIf: () => true,
       callback: v => externalEngineWorker.postMessage({ type: 'INIT', payload: v })
     });
 
@@ -654,7 +628,7 @@
       display: 'External Engine Auto Go Command: ',
       description: 'Automatically determine the go command based on the time left in the game',
       value: true,
-      showOnlyIf: () => vs.queryConfigKey(namespace + '_whichengine') === 'external'
+      showOnlyIf: () => true
     });
 
     vs.registerConfigValue({
@@ -663,7 +637,7 @@
       display: 'External Engine Go Command: ',
       description: 'The command to send to the external engine to start thinking',
       value: 'go movetime 1000',
-      showOnlyIf: () => vs.queryConfigKey(namespace + '_whichengine') === 'external' && !vs.queryConfigKey(namespace + '_externalengineautogocommand')
+      showOnlyIf: () => true && !vs.queryConfigKey(namespace + '_externalengineautogocommand')
     });
 
     vs.registerConfigValue({
@@ -672,7 +646,7 @@
       display: 'External Engine Passkey: ',
       description: 'The passkey to send to the external engine to authenticate',
       value: 'passkey',
-      showOnlyIf: () => vs.queryConfigKey(namespace + '_whichengine') === 'external',
+      showOnlyIf: () => true,
       callback: v => externalEngineWorker.postMessage({ type: 'AUTH', payload: v })
     });
 
@@ -684,30 +658,7 @@
       value: 200,
       min: -500,
       max: 1000,
-      step: 50,
-      showOnlyIf: () => vs.queryConfigKey(namespace + '_whichengine') === 'external'
-    });
-
-    vs.registerConfigValue({
-      key: namespace + '_eloratemethod',
-      type: 'dropdown',
-      display: 'Opponent Rating Method: ',
-      description: 'How to detect opponent rating',
-      value: 'api',
-      options: ['api', 'dom', 'fixed'],
-      showOnlyIf: () => vs.queryConfigKey(namespace + '_whichengine') === 'external'
-    });
-
-    vs.registerConfigValue({
-      key: namespace + '_elorafixed',
-      type: 'number',
-      display: 'Fixed Opponent Elo: ',
-      description: 'Used when method is "fixed"',
-      value: 1500,
-      min: 100,
-      max: 3500,
-      step: 50,
-      showOnlyIf: () => vs.queryConfigKey(namespace + '_whichengine') === 'external' && vs.queryConfigKey(namespace + '_eloratemethod') === 'fixed'
+      step: 50
     });
 
     vs.registerConfigValue({
@@ -773,17 +724,11 @@
       value: true
     });
 
-    vs.registerConfigValue({
-      key: namespace + '_haswarnedaboutexternalengine',
-      type: 'hidden',
-      value: false
-    });
-
     vs.loadPersistentState();
 
     addToConsole(`Loaded! This is version ${GM_info.script.version}`);
     addToConsole(`Github: https://github.com/0mlml/chesshook`);
-    if (vs.queryConfigKey(namespace + '_externalengineurl') && vs.queryConfigKey(namespace + '_whichengine') === 'external') {
+    if (vs.queryConfigKey(namespace + '_externalengineurl')) {
       externalEngineWorker.postMessage({ type: 'INIT', payload: vs.queryConfigKey(namespace + '_externalengineurl') });
     }
   }
@@ -850,7 +795,6 @@
     if (!board?.game) return null;
 
     const offset = parseInt(vs.queryConfigKey(namespace + '_elooffset')) || 0;
-    const method = vs.queryConfigKey(namespace + '_eloratemethod');
 
     let ourRating = 1500;
     let oppoRating = 1500;
@@ -868,10 +812,6 @@
         oppoRating = whiteElo;
       }
     } catch (e) {}
-
-    if (method === 'fixed') {
-      oppoRating = parseInt(vs.queryConfigKey(namespace + '_elorafixed')) || 1500;
-    }
 
     ourRating = oppoRating + offset;
 
@@ -1045,50 +985,35 @@
 
     if (!isMyTurn()) return;
 
-    addToConsole(`Calculating move based on engine: ${vs.queryConfigKey(namespace + '_whichengine')}...`);
+    addToConsole('Calculating move...');
 
     if (vs.queryConfigKey(namespace + '_automoveinstamovestart') && parseInt(fen.split(' ')[5]) < 6) lastEngineMoveCalcStartTime = 0;
     else lastEngineMoveCalcStartTime = performance.now();
 
-    if (vs.queryConfigKey(namespace + '_whichengine') === 'external') {
-      if (!externalEngineName) {
-        addToConsole('External engine appears to be disconnected. Please check the config.');
-        return;
-      }
-
-      const info = getGameInfo();
-      if (!info) {
-        addToConsole('Could not read game info from board.');
-        return;
-      }
-
-      addToConsole(`Elo: self=${info.ourRating} oppo=${info.oppoRating} | TC: ${info.timeControl} | Clock W:${(info.whiteClockFraction * 100).toFixed(0)}% B:${(info.blackClockFraction * 100).toFixed(0)}%`);
-
-      externalEngineWorker.postMessage({ type: 'SETELO', payload: `${info.ourRating} ${info.oppoRating}` });
-
-      if (info.historySANs.length > 0) {
-        externalEngineWorker.postMessage({ type: 'UCI', payload: `history ${info.historySANs.join(' ')}` });
-      }
-
-      externalEngineWorker.postMessage({ type: 'UCI', payload: `timecontrol ${info.timeControl}` });
-      externalEngineWorker.postMessage({ type: 'UCI', payload: `clock ${info.whiteClockFraction.toFixed(4)} ${info.blackClockFraction.toFixed(4)}` });
-
-      let goCommand = 'go';
-      addToConsole('External engine is: ' + externalEngineName);
-      externalEngineWorker.postMessage({ type: 'GETMOVE', payload: { fen: fen, go: goCommand } });
-    } else if (vs.queryConfigKey(namespace + '_whichengine') === 'random') {
-      const legalMoves = document.querySelector('wc-chess-board').game.getLegalMoves()
-      const randomMove = legalMoves[Math.floor(Math.random() * legalMoves.length)];
-
-      addToConsole(`Random computed move: ${randomMove.san}`);
-      handleEngineMove(randomMove.from + randomMove.to + (randomMove.promotion ? randomMove.promotion : ''));
-    } else if (vs.queryConfigKey(namespace + '_whichengine') === 'cccp') {
-      const move = cccpEngine();
-      if (!move) return;
-
-      addToConsole(`CCCP computed move: ${move}`);
-      handleEngineMove(move);
+    if (!externalEngineName) {
+      addToConsole('External engine disconnected. Check config.');
+      return;
     }
+
+    const info = getGameInfo();
+    if (!info) {
+      addToConsole('Could not read game info from board.');
+      return;
+    }
+
+    addToConsole(`Elo: self=${info.ourRating} oppo=${info.oppoRating} | TC: ${info.timeControl} | Clock W:${(info.whiteClockFraction * 100).toFixed(0)}% B:${(info.blackClockFraction * 100).toFixed(0)}%`);
+
+    externalEngineWorker.postMessage({ type: 'SETELO', payload: `${info.ourRating} ${info.oppoRating}` });
+
+    if (info.historySANs.length > 0) {
+      externalEngineWorker.postMessage({ type: 'UCI', payload: `history ${info.historySANs.join(' ')}` });
+    }
+
+    externalEngineWorker.postMessage({ type: 'UCI', payload: `timecontrol ${info.timeControl}` });
+    externalEngineWorker.postMessage({ type: 'UCI', payload: `clock ${info.whiteClockFraction.toFixed(4)} ${info.blackClockFraction.toFixed(4)}` });
+
+    addToConsole('External engine: ' + externalEngineName);
+    externalEngineWorker.postMessage({ type: 'GETMOVE', payload: { fen: fen, go: 'go' } });
   }
 
   const calculateDOMSquarePosition = (square, fromDoc = true) => {
@@ -1425,9 +1350,7 @@
       renderThreats();
     }
 
-    if (!vs.queryConfigKey(namespace + '_legitmode') && vs.queryConfigKey(namespace + '_whichengine') !== 'none') {
-      getEngineMove();
-    }
+    getEngineMove();
   }
 
   window[namespace].updateLoop = setInterval(updateLoop, 20);
