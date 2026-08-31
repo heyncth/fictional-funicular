@@ -1,4 +1,2 @@
-chess
-onnxruntime
-numpy
+otter-chess
 websockets
