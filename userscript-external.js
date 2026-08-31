@@ -789,6 +789,9 @@
     try {
       const headers = board.game.getHeaders();
       playingAs = board.game.getPlayingAs();
+      if (!playingAs || playingAs === 0) {
+        playingAs = board.game.getFEN().split(' ')[1] === 'w' ? 2 : 1;
+      }
       const whiteElo = parseInt(headers.WhiteElo) || 1500;
       const blackElo = parseInt(headers.BlackElo) || 1500;
       oppoElo = playingAs === 1 ? blackElo : whiteElo;
