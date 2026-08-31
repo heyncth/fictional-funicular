@@ -655,7 +655,7 @@
       type: 'number',
       display: 'Elo Offset: ',
       description: 'How much stronger than opponent to play (e.g., 200 = play 200 Elo above opponent)',
-      value: 200,
+      value: 400,
       min: -500,
       max: 1000,
       step: 50
