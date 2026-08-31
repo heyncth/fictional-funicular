@@ -78,6 +78,8 @@ class ConnectionHandler:
         self.player_elo = 1500
         self.opponent_elo = 1500
         self.playing_as = 0
+        self.game_offset = 0
+        self.game_started = False
         self.time_control = "600+0"
 
     async def handle(self, ws):
@@ -113,6 +115,7 @@ class ConnectionHandler:
 
         elif msg == "unlock":
             self.has_lock = False
+            self.game_started = False
             self.engine.reset()
             await ws.send("unlockok")
 
@@ -124,8 +127,11 @@ class ConnectionHandler:
                     self.playing_as = int(parts[2])
                 except ValueError:
                     self.playing_as = 0
-                self.player_elo = self.opponent_elo + random.randint(200, 400)
-                print(f"  Elo: oppo={self.opponent_elo} self={self.player_elo} | playing_as={'W' if self.playing_as == 1 else 'B' if self.playing_as == 2 else '?'}")
+                if not self.game_started:
+                    self.game_offset = random.randint(200, 400)
+                    self.game_started = True
+                self.player_elo = self.opponent_elo + self.game_offset
+                print(f"  Elo: oppo={self.opponent_elo} self={self.player_elo} (offset={self.game_offset}) | playing_as={'W' if self.playing_as == 1 else 'B' if self.playing_as == 2 else '?'}")
 
         elif msg.startswith("history "):
             san_moves = msg[8:].split()
