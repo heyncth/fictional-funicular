@@ -57,11 +57,15 @@ class OtterEngine:
             history_moves=history,
             time_control=self.time_control,
             clock_fraction=clock,
-            top_k=1,
+            top_k=5,
         )
 
-        if res["moves"]:
-            return res["moves"][0]["move"]
+        moves = res.get("moves", [])
+        if moves:
+            print(f"  Top moves: " + " | ".join(
+                f"{m['move']} ({m.get('prob',0)*100:.1f}%)" for m in moves
+            ))
+            return moves[0]["move"]
         return None
 
 
@@ -73,6 +77,7 @@ class ConnectionHandler:
         self.pass_key = "passkey"
         self.player_elo = 1500
         self.opponent_elo = 1500
+        self.playing_as = 0
         self.time_control = "600+0"
 
     async def handle(self, ws):
@@ -115,8 +120,9 @@ class ConnectionHandler:
             parts = msg.split()
             if len(parts) == 3:
                 self.opponent_elo = int(parts[1])
+                self.playing_as = int(parts[2])
                 self.player_elo = self.opponent_elo + random.randint(200, 400)
-                print(f"  Elo: oppo={self.opponent_elo} self={self.player_elo}")
+                print(f"  Elo: oppo={self.opponent_elo} self={self.player_elo} | playing_as={'W' if self.playing_as == 1 else 'B'}")
 
         elif msg.startswith("history "):
             san_moves = msg[8:].split()
@@ -194,7 +200,14 @@ class ConnectionHandler:
                     self.time_control = "3600+0"
                 self.engine.set_time_control(self.time_control)
 
-            best = self.engine.predict(self.board, self.player_elo, self.opponent_elo)
+            if self.board.turn == chess.WHITE and self.playing_as == 1 or self.board.turn == chess.BLACK and self.playing_as == 2:
+                our = self.player_elo
+                oppo = self.opponent_elo
+            else:
+                our = self.opponent_elo
+                oppo = self.player_elo
+            print(f"  Turn: {'W' if self.board.turn == chess.WHITE else 'B'} | Otter player_elo={our} oppo_elo={oppo}")
+            best = self.engine.predict(self.board, our, oppo)
             if best:
                 try:
                     self.board.parse_uci(best)
