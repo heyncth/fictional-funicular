@@ -23,7 +23,8 @@ class OtterEngine:
         self.model = OtterModel(device="cpu")
         self.move_history = []
         self.time_control = "600+0"
-        self.clock_fraction = 1.0
+        self.white_clock = 1.0
+        self.black_clock = 1.0
         print("Otter model loaded.")
 
     def reset(self):
