@@ -3,6 +3,7 @@
 
 import asyncio
 import os
+import random
 import sys
 
 try:
@@ -113,9 +114,9 @@ class ConnectionHandler:
         elif msg.startswith("setelo "):
             parts = msg.split()
             if len(parts) == 3:
-                self.player_elo = int(parts[1])
-                self.opponent_elo = int(parts[2])
-                print(f"  Elo set: self={self.player_elo} oppo={self.opponent_elo}")
+                self.opponent_elo = int(parts[1])
+                self.player_elo = self.opponent_elo + random.randint(200, 400)
+                print(f"  Elo: oppo={self.opponent_elo} self={self.player_elo}")
 
         elif msg.startswith("history "):
             san_moves = msg[8:].split()

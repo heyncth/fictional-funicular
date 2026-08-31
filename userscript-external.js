@@ -651,17 +651,6 @@
     });
 
     vs.registerConfigValue({
-      key: namespace + '_elooffset',
-      type: 'number',
-      display: 'Elo Offset: ',
-      description: 'How much stronger than opponent to play (e.g., 200 = play 200 Elo above opponent)',
-      value: 400,
-      min: -500,
-      max: 1000,
-      step: 50
-    });
-
-    vs.registerConfigValue({
       key: namespace + '_automove',
       type: 'checkbox',
       display: 'Auto Move: ',
@@ -794,26 +783,16 @@
     const board = document.querySelector('wc-chess-board');
     if (!board?.game) return null;
 
-    const offset = parseInt(vs.queryConfigKey(namespace + '_elooffset')) || 0;
-
-    let ourRating = 1500;
-    let oppoRating = 1500;
+    let oppoElo = 1500;
+    let playingAs = 0;
 
     try {
       const headers = board.game.getHeaders();
-      const playingAs = board.game.getPlayingAs();
+      playingAs = board.game.getPlayingAs();
       const whiteElo = parseInt(headers.WhiteElo) || 1500;
       const blackElo = parseInt(headers.BlackElo) || 1500;
-      if (playingAs === 1) {
-        ourRating = whiteElo;
-        oppoRating = blackElo;
-      } else {
-        ourRating = blackElo;
-        oppoRating = whiteElo;
-      }
+      oppoElo = playingAs === 1 ? blackElo : whiteElo;
     } catch (e) {}
-
-    ourRating = oppoRating + offset;
 
     let historySANs = [];
     try {
@@ -843,7 +822,7 @@
       }
     } catch (e) {}
 
-    return { ourRating, oppoRating, historySANs, timeControl, whiteClockFraction, blackClockFraction };
+    return { oppoElo, playingAs, historySANs, timeControl, whiteClockFraction, blackClockFraction };
   }
 
   const xyToCoordInverted = (x, y) => {
@@ -1001,9 +980,9 @@
       return;
     }
 
-    addToConsole(`Elo: self=${info.ourRating} oppo=${info.oppoRating} | TC: ${info.timeControl} | Clock W:${(info.whiteClockFraction * 100).toFixed(0)}% B:${(info.blackClockFraction * 100).toFixed(0)}%`);
+    addToConsole(`Opp elo: ${info.oppoElo} | Playing as: ${info.playingAs === 1 ? 'W' : 'B'} | TC: ${info.timeControl} | Clock W:${(info.whiteClockFraction * 100).toFixed(0)}% B:${(info.blackClockFraction * 100).toFixed(0)}%`);
 
-    externalEngineWorker.postMessage({ type: 'SETELO', payload: `${info.ourRating} ${info.oppoRating}` });
+    externalEngineWorker.postMessage({ type: 'SETELO', payload: `${info.oppoElo} ${info.playingAs}` });
 
     if (info.historySANs.length > 0) {
       externalEngineWorker.postMessage({ type: 'UCI', payload: `history ${info.historySANs.join(' ')}` });
