@@ -28,13 +28,15 @@ class OtterEngine:
 
     def reset(self):
         self.move_history = []
-        self.clock_fraction = 1.0
+        self.white_clock = 1.0
+        self.black_clock = 1.0
 
     def set_time_control(self, tc):
         self.time_control = tc
 
-    def set_clock_fraction(self, fraction):
-        self.clock_fraction = max(0.0, min(1.0, fraction))
+    def set_clock_fraction(self, white_frac, black_frac):
+        self.white_clock = max(0.0, min(1.0, white_frac))
+        self.black_clock = max(0.0, min(1.0, black_frac))
 
     def add_move(self, uci_move):
         self.move_history.append(uci_move)
@@ -44,6 +46,7 @@ class OtterEngine:
     def predict(self, board, player_elo, opponent_elo):
         fen = board.fen()
         history = list(self.move_history)
+        clock = self.white_clock if board.turn == chess.WHITE else self.black_clock
 
         res = self.model.predict(
             fen=fen,
@@ -51,7 +54,7 @@ class OtterEngine:
             opponent_elo=opponent_elo,
             history_moves=history,
             time_control=self.time_control,
-            clock_fraction=self.clock_fraction,
+            clock_fraction=clock,
             top_k=1,
         )
 
@@ -131,11 +134,13 @@ class ConnectionHandler:
             print(f"  Time control: {msg[12:]}")
 
         elif msg.startswith("clock "):
+            parts = msg.split()
             try:
-                frac = float(msg[6:])
-                self.engine.set_clock_fraction(frac)
-                print(f"  Clock fraction: {frac:.2%}")
-            except ValueError:
+                wf = float(parts[1])
+                bf = float(parts[2])
+                self.engine.set_clock_fraction(wf, bf)
+                print(f"  Clock: W={wf:.2%} B={bf:.2%}")
+            except (ValueError, IndexError):
                 pass
 
         elif msg.startswith("position fen "):

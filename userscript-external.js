@@ -1055,7 +1055,8 @@
     } catch (e) {}
 
     let timeControl = '600+0';
-    let clockFraction = 1.0;
+    let whiteClockFraction = 1.0;
+    let blackClockFraction = 1.0;
     try {
       const tc = board.game.timeControl.get();
       if (tc && tc.baseTime) {
@@ -1064,16 +1065,19 @@
         timeControl = `${base}+${inc}`;
 
         const times = board.game.times.get();
-        const playingAs = board.game.getPlayingAs();
         if (times && times.length > 0) {
-          const myTimeCs = times[times.length - (playingAs === 1 ? 1 : 2)];
           const totalTimeCs = tc.baseTime / 10;
-          if (totalTimeCs > 0) clockFraction = Math.max(0, Math.min(1, myTimeCs / totalTimeCs));
+          if (totalTimeCs > 0) {
+            const whiteTimeCs = times[times.length - 2] || totalTimeCs;
+            const blackTimeCs = times[times.length - 1] || totalTimeCs;
+            whiteClockFraction = Math.max(0, Math.min(1, whiteTimeCs / totalTimeCs));
+            blackClockFraction = Math.max(0, Math.min(1, blackTimeCs / totalTimeCs));
+          }
         }
       }
     } catch (e) {}
 
-    return { ourRating, oppoRating, historySANs, timeControl, clockFraction };
+    return { ourRating, oppoRating, historySANs, timeControl, whiteClockFraction, blackClockFraction };
   }
 
   const xyToCoordInverted = (x, y) => {
@@ -1235,7 +1239,7 @@
         return;
       }
 
-      addToConsole(`Elo: self=${info.ourRating} oppo=${info.oppoRating} | TC: ${info.timeControl} | Clock: ${(info.clockFraction * 100).toFixed(0)}%`);
+      addToConsole(`Elo: self=${info.ourRating} oppo=${info.oppoRating} | TC: ${info.timeControl} | Clock W:${(info.whiteClockFraction * 100).toFixed(0)}% B:${(info.blackClockFraction * 100).toFixed(0)}%`);
 
       externalEngineWorker.postMessage({ type: 'SETELO', payload: `${info.ourRating} ${info.oppoRating}` });
 
@@ -1244,7 +1248,7 @@
       }
 
       externalEngineWorker.postMessage({ type: 'UCI', payload: `timecontrol ${info.timeControl}` });
-      externalEngineWorker.postMessage({ type: 'UCI', payload: `clock ${info.clockFraction.toFixed(4)}` });
+      externalEngineWorker.postMessage({ type: 'UCI', payload: `clock ${info.whiteClockFraction.toFixed(4)} ${info.blackClockFraction.toFixed(4)}` });
 
       let goCommand = 'go';
       addToConsole('External engine is: ' + externalEngineName);
