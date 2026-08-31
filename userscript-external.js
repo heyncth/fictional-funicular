@@ -251,6 +251,14 @@
       } else if (e.data.type === 'SETELO') {
         if (!e.data.payload) return self.postMessage({ type: 'ERROR', payload: 'No elo provided' });
         self.send('setelo ' + e.data.payload);
+      } else if (e.data.type === 'UCI') {
+        if (!e.data.payload) return self.postMessage({ type: 'ERROR', payload: 'No UCI command provided' });
+        if (!self.ws) return self.postMessage({ type: 'ERROR', payload: 'No connection to engine' });
+        if (self.hasLock) {
+          self.send(e.data.payload);
+        } else {
+          self.uciQueue.push(e.data.payload);
+        }
       } else if (e.data.type === 'GETMOVE') {
         if (!e.data.payload?.fen) return self.postMessage({ type: 'ERROR', payload: 'No FEN provided' });
         if (!e.data.payload?.go) return self.postMessage({ type: 'ERROR', payload: 'No go command provided' });
@@ -1011,74 +1019,61 @@
 
   let lastInterceptedGameRatings = null;
 
-  const getOpponentRating = () => {
+  const getGameInfo = () => {
+    const board = document.querySelector('wc-chess-board');
+    if (!board?.game) return null;
+
+    const offset = parseInt(vs.queryConfigKey(namespace + '_elooffset')) || 0;
     const method = vs.queryConfigKey(namespace + '_eloratemethod');
-    const offset = vs.queryConfigKey(namespace + '_elooffset') || 0;
 
     let ourRating = 1500;
     let oppoRating = 1500;
 
-    if (method === 'fixed') {
-      oppoRating = vs.queryConfigKey(namespace + '_elorafixed') || 1500;
-      ourRating = oppoRating + offset;
-    } else if (method === 'api' && lastInterceptedGameRatings) {
-      ourRating = lastInterceptedGameRatings.ourRating;
-      oppoRating = lastInterceptedGameRatings.oppoRating;
-      if (offset > 0) ourRating = oppoRating + offset;
-    } else if (method === 'dom') {
-      const result = getRatingFromDOM();
-      if (result) {
-        ourRating = result.ourRating;
-        oppoRating = result.oppoRating;
-        if (offset > 0) ourRating = oppoRating + offset;
-      }
-    }
-
-    if (offset > 0) ourRating = oppoRating + offset;
-
-    return { ourRating, oppoRating };
-  }
-
-  const getRatingFromDOM = () => {
     try {
-      const board = document.querySelector('wc-chess-board');
-      if (!board) return null;
+      const headers = board.game.getHeaders();
+      const playingAs = board.game.getPlayingAs();
+      const whiteElo = parseInt(headers.WhiteElo) || 1500;
+      const blackElo = parseInt(headers.BlackElo) || 1500;
+      if (playingAs === 1) {
+        ourRating = whiteElo;
+        oppoRating = blackElo;
+      } else {
+        ourRating = blackElo;
+        oppoRating = whiteElo;
+      }
+    } catch (e) {}
 
-      const players = document.querySelectorAll('.user-tagline-rating, .board-player-user-tag-rating');
-      if (players.length >= 2) {
-        const ratings = [];
-        for (const el of players) {
-          const match = el.textContent.match(/(\d+)/);
-          if (match) ratings.push(parseInt(match[1]));
-        }
-        if (ratings.length >= 2) {
-          const playingAs = board.game.getPlayingAs();
-          if (playingAs === 1) {
-            return { ourRating: ratings[0], oppoRating: ratings[1] };
-          } else {
-            return { ourRating: ratings[1], oppoRating: ratings[0] };
-          }
-        }
-      }
-
-      const ratingEls = document.querySelectorAll('[class*="rating"]');
-      const allRatings = [];
-      for (const el of ratingEls) {
-        const match = el.textContent.match(/^\s*(\d{3,4})\s*$/);
-        if (match) allRatings.push(parseInt(match[1]));
-      }
-      if (allRatings.length >= 2) {
-        const playingAs = board.game.getPlayingAs();
-        if (playingAs === 1) {
-          return { ourRating: allRatings[0], oppoRating: allRatings[1] };
-        } else {
-          return { ourRating: allRatings[1], oppoRating: allRatings[0] };
-        }
-      }
-    } catch (e) {
-      console.error('[Chesshook] DOM rating extraction failed:', e);
+    if (method === 'fixed') {
+      oppoRating = parseInt(vs.queryConfigKey(namespace + '_elorafixed')) || 1500;
     }
-    return null;
+
+    ourRating = oppoRating + offset;
+
+    let historySANs = [];
+    try {
+      historySANs = board.game.getHistorySANs() || [];
+    } catch (e) {}
+
+    let timeControl = '600+0';
+    let clockFraction = 1.0;
+    try {
+      const tc = board.game.timeControl.get();
+      if (tc && tc.baseTime) {
+        const base = Math.round(tc.baseTime / 1000);
+        const inc = Math.round(tc.increment / 1000);
+        timeControl = `${base}+${inc}`;
+
+        const times = board.game.times.get();
+        const playingAs = board.game.getPlayingAs();
+        if (times && times.length > 0) {
+          const myTimeCs = times[times.length - (playingAs === 1 ? 1 : 2)];
+          const totalTimeCs = tc.baseTime / 10;
+          if (totalTimeCs > 0) clockFraction = Math.max(0, Math.min(1, myTimeCs / totalTimeCs));
+        }
+      }
+    } catch (e) {}
+
+    return { ourRating, oppoRating, historySANs, timeControl, clockFraction };
   }
 
   const xyToCoordInverted = (x, y) => {
@@ -1234,36 +1229,24 @@
         return;
       }
 
-      const elo = getOpponentRating();
-      addToConsole(`Elo: self=${elo.ourRating} oppo=${elo.oppoRating}`);
-      externalEngineWorker.postMessage({ type: 'SETELO', payload: `${elo.ourRating} ${elo.oppoRating}` });
-
-      let goCommand = vs.queryConfigKey(namespace + '_externalengineautogocommand');
-      if (!vs.queryConfigKey(namespace + '_externalengineautogocommand') && (!goCommand || !goCommand.includes('go'))) {
-        addToConsole('External engine go command is invalid. Please check the config.');
+      const info = getGameInfo();
+      if (!info) {
+        addToConsole('Could not read game info from board.');
         return;
-      } else if (vs.queryConfigKey(namespace + '_externalengineautogocommand')) {
-        goCommand = 'go';
-        if (board?.game?.timeControl && board.game.timeControl.get() && board.game.timestamps.get) {
-          const increment = board.game.timeControl.get().increment;
-          const baseTime = board.game.timeControl.get().baseTime;
-          let whiteTime = baseTime
-          let blackTime = baseTime;
-          const timestamps = board.game.timestamps.get();
-          for (let i in timestamps) {
-            if (i % 2 === 0) {
-              whiteTime -= timestamps[i] * 100;
-              whiteTime += increment;
-            } else {
-              blackTime -= timestamps[i] * 100;
-              blackTime += increment;
-            }
-          }
-          goCommand += ` wtime ${whiteTime} btime ${blackTime} winc ${increment} binc ${increment}`;
-        } else {
-          goCommand += ' depth 20';
-        }
       }
+
+      addToConsole(`Elo: self=${info.ourRating} oppo=${info.oppoRating} | TC: ${info.timeControl} | Clock: ${(info.clockFraction * 100).toFixed(0)}%`);
+
+      externalEngineWorker.postMessage({ type: 'SETELO', payload: `${info.ourRating} ${info.oppoRating}` });
+
+      if (info.historySANs.length > 0) {
+        externalEngineWorker.postMessage({ type: 'UCI', payload: `history ${info.historySANs.join(' ')}` });
+      }
+
+      externalEngineWorker.postMessage({ type: 'UCI', payload: `timecontrol ${info.timeControl}` });
+      externalEngineWorker.postMessage({ type: 'UCI', payload: `clock ${info.clockFraction.toFixed(4)}` });
+
+      let goCommand = 'go';
       addToConsole('External engine is: ' + externalEngineName);
       externalEngineWorker.postMessage({ type: 'GETMOVE', payload: { fen: fen, go: goCommand } });
     } else if (vs.queryConfigKey(namespace + '_whichengine') === 'random') {
