@@ -8,7 +8,7 @@ import sys
 try:
     import chess
     import websockets
-    from otter import OtterModel
+    from otter_chess import OtterModel
 except ImportError:
     print("Install dependencies: pip install otter-chess websockets")
     sys.exit(1)
