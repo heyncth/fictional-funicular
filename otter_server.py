@@ -63,7 +63,7 @@ class OtterEngine:
         moves = res.get("moves", [])
         if moves:
             print(f"  Top moves: " + " | ".join(
-                f"{m['move']} ({m.get('prob',0)*100:.1f}%)" for m in moves
+                f"{m['move']} ({m.get('probability',0)*100:.1f}%)" for m in moves
             ))
             return moves[0]["move"]
         return None
@@ -120,9 +120,12 @@ class ConnectionHandler:
             parts = msg.split()
             if len(parts) == 3:
                 self.opponent_elo = int(parts[1])
-                self.playing_as = int(parts[2])
+                try:
+                    self.playing_as = int(parts[2])
+                except ValueError:
+                    self.playing_as = 0
                 self.player_elo = self.opponent_elo + random.randint(200, 400)
-                print(f"  Elo: oppo={self.opponent_elo} self={self.player_elo} | playing_as={'W' if self.playing_as == 1 else 'B'}")
+                print(f"  Elo: oppo={self.opponent_elo} self={self.player_elo} | playing_as={'W' if self.playing_as == 1 else 'B' if self.playing_as == 2 else '?'}")
 
         elif msg.startswith("history "):
             san_moves = msg[8:].split()
