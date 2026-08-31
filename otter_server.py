@@ -113,19 +113,34 @@ class ConnectionHandler:
                 self.opponent_elo = int(parts[2])
                 print(f"  Elo set: self={self.player_elo} oppo={self.opponent_elo}")
 
+        elif msg.startswith("history "):
+            san_moves = msg[8:].split()
+            self.engine.move_history = []
+            temp_board = chess.Board()
+            for san in san_moves:
+                try:
+                    move = temp_board.parse_san(san)
+                    self.engine.move_history.append(move.uci())
+                    temp_board.push(move)
+                except Exception as e:
+                    print(f"  Bad SAN: {san} - {e}")
+            print(f"  History: {len(self.engine.move_history)} moves")
+
+        elif msg.startswith("timecontrol "):
+            self.engine.set_time_control(msg[12:])
+            print(f"  Time control: {msg[12:]}")
+
+        elif msg.startswith("clock "):
+            try:
+                frac = float(msg[6:])
+                self.engine.set_clock_fraction(frac)
+                print(f"  Clock fraction: {frac:.2%}")
+            except ValueError:
+                pass
+
         elif msg.startswith("position fen "):
             try:
-                new_board = chess.Board(msg[13:])
-                if self.board.is_valid() and new_board.is_valid():
-                    diff = self.board.fen().split()[0] != new_board.fen().split()[0]
-                    if diff:
-                        for move in self.board.legal_moves:
-                            test_board = self.board.copy()
-                            test_board.push(move)
-                            if test_board.fen().split()[0] == new_board.fen().split()[0]:
-                                self.engine.add_move(move.uci())
-                                break
-                self.board = new_board
+                self.board = chess.Board(msg[13:])
             except ValueError as e:
                 print(f"  Bad FEN: {e}")
 
@@ -176,7 +191,6 @@ class ConnectionHandler:
             if best:
                 try:
                     self.board.parse_uci(best)
-                    self.engine.add_move(best)
                     print(f"  -> bestmove {best}")
                     await ws.send(f"bestmove {best}")
                 except Exception:
