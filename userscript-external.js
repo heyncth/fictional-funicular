@@ -346,69 +346,6 @@
     }
   }
 
-  const betafishWebWorkerFunc = () => {
-    self.instance = betafishEngine();
-    self.thinking = false;
-
-    const postError = (message) => self.postMessage({ type: 'ERROR', payload: message });
-    const isInstanceInitialized = () => self.instance || postError('Betafish not initialized.');
-
-    self.addEventListener('message', e => {
-      if (!isInstanceInitialized()) return;
-
-      switch (e.data.type) {
-        case 'FEN':
-          if (!e.data.payload) return postError('No FEN provided.');
-          self.instance.setFEN(e.data.payload);
-          break;
-        case 'GETMOVE':
-          if (self.thinking) return postError('Betafish is already calculating.');
-          self.postMessage({ type: 'MESSAGE', payload: 'Betafish received request for best move. Calculating...' });
-          self.thinking = true;
-          const move = self.instance.getBestMove();
-          self.thinking = false;
-          self.postMessage({ type: 'MOVE', payload: { move, toMove: self.instance.getFEN().split(' ')[1] } });
-          break;
-        case 'THINKINGTIME':
-          if (isNaN(e.data.payload)) return postError('Invalid thinking time provided.');
-          self.instance.setThinkingTime(e.data.payload / 1000);
-          self.postMessage({ type: 'DEBUG', payload: `Betafish thinking time set to ${e.data.payload}ms.` });
-          break;
-        default:
-          postError('Invalid message type.');
-      }
-    });
-  };
-
-  const betafishWorkerBlob = new Blob([`const betafishEngine=${betafishEngine.toString()};(${betafishWebWorkerFunc.toString()})();`], { type: 'application/javascript' });
-  const betafishWorkerURL = URL.createObjectURL(betafishWorkerBlob);
-  const betafishWorker = new Worker(betafishWorkerURL);
-
-  const betafishPieces = { EMPTY: 0, wP: 1, wN: 2, wB: 3, wR: 4, wQ: 5, wK: 6, bP: 7, bN: 8, bB: 9, bR: 10, bQ: 11, bK: 12 };
-
-  betafishWorker.onmessage = e => {
-    switch (e.data.type) {
-      case 'DEBUG':
-      case 'MESSAGE':
-        console.info(e.data.payload);
-        break;
-      case 'ERROR':
-        console.error(e.data.payload);
-        break;
-      case 'MOVE':
-        const { move, toMove } = e.data.payload;
-        const squareToRankFile = sq => [Math.floor((sq - 21) / 10), sq - 21 - Math.floor((sq - 21) / 10) * 10];
-        const from = squareToRankFile(move & 0x7f);
-        const to = squareToRankFile((move >> 7) & 0x7f);
-        const promoted = (move >> 20) & 0xf;
-        const promotedString = promoted !== 0 ? Object.entries(betafishPieces).find(([key, value]) => value === promoted)?.[0].toLowerCase()[1] || '' : '';
-        const uciMove = coordsToUCIMoveString(from, to, promotedString);
-        addToConsole(`Betafish computed best for ${toMove === 'w' ? 'white' : 'black'}: ${uciMove}`);
-        handleEngineMove(uciMove);
-        break;
-    }
-  };
-
   const originalFetch = window.fetch;
   window.fetch = async (...args) => {
     const response = await originalFetch(...args);
@@ -644,50 +581,6 @@
     });
 
     vs.registerConfigValue({
-      key: namespace + '_renderthreats',
-      type: 'checkbox',
-      display: 'Render Threats: ',
-      description: 'Render mates, undefended pieces, underdefended pieces, and pins.',
-      value: true
-    });
-
-    vs.registerConfigValue({
-      key: namespace + '_renderthreatspincolor',
-      type: 'color',
-      display: 'Pin Color: ',
-      description: 'The color to render pins in',
-      value: '#3333ff',
-      showOnlyIf: () => vs.queryConfigKey(namespace + '_renderthreats')
-    });
-
-    vs.registerConfigValue({
-      key: namespace + '_renderthreatsundefendedcolor',
-      type: 'color',
-      display: 'Undefended Color: ',
-      description: 'The color to render undefended pieces in',
-      value: '#ffff00',
-      showOnlyIf: () => vs.queryConfigKey(namespace + '_renderthreats')
-    });
-
-    vs.registerConfigValue({
-      key: namespace + '_renderthreatsunderdefendedcolor',
-      type: 'color',
-      display: 'Underdefended Color: ',
-      description: 'The color to render underdefended pieces in',
-      value: '#ff6666',
-      showOnlyIf: () => vs.queryConfigKey(namespace + '_renderthreats')
-    });
-
-    vs.registerConfigValue({
-      key: namespace + '_renderthreatsmatecolor',
-      type: 'color',
-      display: 'Mate Color: ',
-      description: 'The color to render mates in',
-      value: '#ff0000',
-      showOnlyIf: () => vs.queryConfigKey(namespace + '_renderthreats')
-    });
-
-    vs.registerConfigValue({
       key: namespace + '_cleararrowskey',
       type: 'hotkey',
       display: 'Clear Arrows Hotkey: ',
@@ -701,34 +594,13 @@
     });
 
     vs.registerConfigValue({
-      key: namespace + '_autoqueue',
-      type: 'checkbox',
-      display: 'Auto Queue: ',
-      description: 'Attempts to automatically queue for games.',
-      value: false
-    });
-
-    vs.registerConfigValue({
-      key: namespace + '_legitmode',
-      type: 'checkbox',
-      display: 'Legit Mode: ',
-      description: 'Prevents the script from doing anything that could be considered cheating.',
-      value: false,
-      callback: () => {
-        vs.setConfigValue('whichEngine', 'none');
-        vs.setConfigValue('autoMove', false);
-        vs.setConfigValue('puzzleMode', false);
-      }
-    });
-
-    vs.registerConfigValue({
       key: namespace + '_playingas',
       type: 'dropdown',
       display: 'Playing As: ',
       description: 'What color to calculate moves for',
       value: 'both',
       options: ['white', 'black', 'auto'],
-      showOnlyIf: () => !vs.queryConfigKey(namespace + '_legitmode') && !vs.queryConfigKey(namespace + '_puzzlemode')
+      showOnlyIf: () => true
     });
 
     vs.registerConfigValue({
@@ -737,7 +609,7 @@
       display: 'Engine Move Color: ',
       description: 'The color to render the engine\'s move in',
       value: '#77ff77',
-      showOnlyIf: () => !vs.queryConfigKey(namespace + '_legitmode') && !vs.queryConfigKey(namespace + '_puzzlemode')
+      showOnlyIf: () => true
     });
 
     vs.registerConfigValue({
@@ -746,8 +618,8 @@
       display: 'Which Engine: ',
       description: 'Which engine to use',
       value: 'none',
-      options: ['betafish', 'random', 'cccp', 'external'],
-      showOnlyIf: () => !vs.queryConfigKey(namespace + '_legitmode') && !vs.queryConfigKey(namespace + '_puzzlemode'),
+      options: ['random', 'cccp', 'external'],
+      showOnlyIf: () => true,
       callback: () => {
         if (vs.queryConfigKey(namespace + '_whichengine') !== 'external') {
           return;
@@ -767,27 +639,12 @@
     });
 
     vs.registerConfigValue({
-      key: namespace + '_betafishthinkingtime',
-      type: 'number',
-      display: 'Betafish Thinking Time: ',
-      description: 'The amount of time in ms to think for each move',
-      value: 1000,
-      min: 0,
-      max: 20000,
-      step: 100,
-      showOnlyIf: () => !vs.queryConfigKey(namespace + '_legitmode') && vs.queryConfigKey(namespace + '_whichengine') === 'betafish',
-      callback: () => {
-        betafishWorker.postMessage({ type: 'THINKINGTIME', payload: parseFloat(vs.queryConfigKey(namespace + '_betafishthinkingtime')) });
-      }
-    });
-
-    vs.registerConfigValue({
       key: namespace + '_externalengineurl',
       type: 'text',
       display: 'External Engine URL: ',
       description: 'The URL of the external engine',
       value: 'ws://localhost:8080/ws',
-      showOnlyIf: () => !vs.queryConfigKey(namespace + '_legitmode') && vs.queryConfigKey(namespace + '_whichengine') === 'external',
+      showOnlyIf: () => vs.queryConfigKey(namespace + '_whichengine') === 'external',
       callback: v => externalEngineWorker.postMessage({ type: 'INIT', payload: v })
     });
 
@@ -797,7 +654,7 @@
       display: 'External Engine Auto Go Command: ',
       description: 'Automatically determine the go command based on the time left in the game',
       value: true,
-      showOnlyIf: () => !vs.queryConfigKey(namespace + '_legitmode') && vs.queryConfigKey(namespace + '_whichengine') === 'external'
+      showOnlyIf: () => vs.queryConfigKey(namespace + '_whichengine') === 'external'
     });
 
     vs.registerConfigValue({
@@ -806,7 +663,7 @@
       display: 'External Engine Go Command: ',
       description: 'The command to send to the external engine to start thinking',
       value: 'go movetime 1000',
-      showOnlyIf: () => !vs.queryConfigKey(namespace + '_legitmode') && vs.queryConfigKey(namespace + '_whichengine') === 'external' && !vs.queryConfigKey(namespace + '_externalengineautogocommand')
+      showOnlyIf: () => vs.queryConfigKey(namespace + '_whichengine') === 'external' && !vs.queryConfigKey(namespace + '_externalengineautogocommand')
     });
 
     vs.registerConfigValue({
@@ -815,7 +672,7 @@
       display: 'External Engine Passkey: ',
       description: 'The passkey to send to the external engine to authenticate',
       value: 'passkey',
-      showOnlyIf: () => !vs.queryConfigKey(namespace + '_legitmode') && vs.queryConfigKey(namespace + '_whichengine') === 'external',
+      showOnlyIf: () => vs.queryConfigKey(namespace + '_whichengine') === 'external',
       callback: v => externalEngineWorker.postMessage({ type: 'AUTH', payload: v })
     });
 
@@ -828,7 +685,7 @@
       min: -500,
       max: 1000,
       step: 50,
-      showOnlyIf: () => !vs.queryConfigKey(namespace + '_legitmode') && vs.queryConfigKey(namespace + '_whichengine') === 'external'
+      showOnlyIf: () => vs.queryConfigKey(namespace + '_whichengine') === 'external'
     });
 
     vs.registerConfigValue({
@@ -838,7 +695,7 @@
       description: 'How to detect opponent rating',
       value: 'api',
       options: ['api', 'dom', 'fixed'],
-      showOnlyIf: () => !vs.queryConfigKey(namespace + '_legitmode') && vs.queryConfigKey(namespace + '_whichengine') === 'external'
+      showOnlyIf: () => vs.queryConfigKey(namespace + '_whichengine') === 'external'
     });
 
     vs.registerConfigValue({
@@ -850,7 +707,7 @@
       min: 100,
       max: 3500,
       step: 50,
-      showOnlyIf: () => !vs.queryConfigKey(namespace + '_legitmode') && vs.queryConfigKey(namespace + '_whichengine') === 'external' && vs.queryConfigKey(namespace + '_eloratemethod') === 'fixed'
+      showOnlyIf: () => vs.queryConfigKey(namespace + '_whichengine') === 'external' && vs.queryConfigKey(namespace + '_eloratemethod') === 'fixed'
     });
 
     vs.registerConfigValue({
@@ -859,7 +716,7 @@
       display: 'Auto Move: ',
       description: 'Potentially bannable. Tries to randomize move times to avoid detection.',
       value: false,
-      showOnlyIf: () => !vs.queryConfigKey(namespace + '_legitmode') && !vs.queryConfigKey(namespace + '_puzzlemode')
+      showOnlyIf: () => true
     });
 
     vs.registerConfigValue({
@@ -871,7 +728,7 @@
       min: 0,
       max: 20000,
       step: 100,
-      showOnlyIf: () => !vs.queryConfigKey(namespace + '_legitmode') && vs.queryConfigKey(namespace + '_automove')
+      showOnlyIf: () => vs.queryConfigKey(namespace + '_automove')
     });
 
     vs.registerConfigValue({
@@ -883,7 +740,7 @@
       min: 0,
       max: 20000,
       step: 100,
-      showOnlyIf: () => !vs.queryConfigKey(namespace + '_legitmode') && vs.queryConfigKey(namespace + '_automove')
+      showOnlyIf: () => vs.queryConfigKey(namespace + '_automove')
     });
 
     vs.registerConfigValue({
@@ -892,39 +749,8 @@
       display: 'Speed up game start: ',
       description: 'Instantly move first 5',
       value: true,
-      showOnlyIf: () => !vs.queryConfigKey(namespace + '_legitmode') && vs.queryConfigKey(namespace + '_automove')
+      showOnlyIf: () => vs.queryConfigKey(namespace + '_automove')
     });
-
-    vs.registerConfigValue({
-      key: namespace + '_puzzlemode',
-      type: 'checkbox',
-      display: 'Solves puzzles: ',
-      description: 'Solves puzzles automatically',
-      value: false,
-      callback: () => {
-        vs.setConfigValue('whichEngine', 'none');
-        vs.setConfigValue('autoMove', false);
-      }
-    });
-
-    vs.registerConfigValue({
-      key: namespace + '_apipuzzlemode',
-      type: 'checkbox',
-      display: 'Use the API for puzzles: ',
-      description: 'Uses the API to solve puzzles',
-      value: false,
-      showOnlyIf: () => vs.queryConfigKey(namespace + '_puzzlemode')
-    });
-
-    vs.registerConfigValue({
-      key: namespace + '_apipuzzletimemode',
-      type: 'dropdown',
-      display: 'Puzzle Time Mode: ',
-      description: 'The time mode to use for the API puzzles',
-      value: 'zero',
-      options: ['hour', 'legit'],
-      showOnlyIf: () => vs.queryConfigKey(namespace + '_puzzlemode') && vs.queryConfigKey(namespace + '_apipuzzlemode')
-    })
 
     vs.registerConfigValue({
       key: namespace + '_refreshhotkey',
@@ -1224,10 +1050,7 @@
     if (vs.queryConfigKey(namespace + '_automoveinstamovestart') && parseInt(fen.split(' ')[5]) < 6) lastEngineMoveCalcStartTime = 0;
     else lastEngineMoveCalcStartTime = performance.now();
 
-    if (vs.queryConfigKey(namespace + '_whichengine') === 'betafish') {
-      betafishWorker.postMessage({ type: 'FEN', payload: fen });
-      betafishWorker.postMessage({ type: 'GETMOVE' });
-    } else if (vs.queryConfigKey(namespace + '_whichengine') === 'external') {
+    if (vs.queryConfigKey(namespace + '_whichengine') === 'external') {
       if (!externalEngineName) {
         addToConsole('External engine appears to be disconnected. Please check the config.');
         return;
