@@ -4,67 +4,51 @@
 // @grant       none
 // @require     https://raw.githubusercontent.com/heyncth/pool-hall-manager/refs/heads/main/beta.js
 // @require     https://raw.githubusercontent.com/0mlml/vasara/main/vasara.js
-// @version     2.3
+// @version     2.4
 // @author      0mlml
-// @description Chess.com Cheat Userscript
+// @description Chess.com AI Move Suggestion Userscript
 // @run-at      document-start
 // ==/UserScript==
 
 (() => {
   const vs = vasara();
+  const namespace = 'chesshook';
+  window[namespace] = {};
 
-  const createExploitWindow = () => {
-    const exploitWindow = vs.generateModalWindow({
-      title: 'Exploits',
-      unique: true,
-    });
+  // Status Badge
+  const createStatusBadge = () => {
+    const badge = document.createElement('div');
+    badge.id = namespace + '_status';
+    badge.style.cssText = 'position:fixed;top:8px;right:8px;z-index:99999;padding:4px 10px;border-radius:6px;font-size:12px;font-family:monospace;color:#fff;background:#888;pointer-events:none;opacity:0.85;';
+    badge.textContent = '\ud83d\udd0c Disconnected';
+    document.body.appendChild(badge);
+    return badge;
+  };
 
-    if (!exploitWindow) return;
+  let statusBadge = null;
+  const updateStatus = (text, color) => {
+    if (!statusBadge) {
+      if (document.body) statusBadge = createStatusBadge();
+      else return;
+    }
+    statusBadge.textContent = text;
+    statusBadge.style.background = color;
+  };
 
-    exploitWindow.generateLabel({
-      text: 'Force Scholars Mate against bot: ',
-      tooltip: 'This feature simply does not work online. It will only work on the computer play page, and can be used to three crown all bots.'
-    });
+  // Engine State
+  let engineConnected = false;
+  let engineName = null;
 
-    exploitWindow.generateButton({
-      text: 'Force Scholars Mate',
-      callback: e => {
-        e.preventDefault();
-        if (!document.location.pathname.startsWith('/play/computer')) return alert('You must be on the computer play page to use this feature.');
-        const board = document.querySelector('wc-chess-board');
-        if (!board?.game?.move || !board?.game?.getFEN) return alert('You must be in a game to use this feature.');
-        if (parseInt(board.game.getFEN().split(' ')[5]) > 1 || board.game.getFEN().split(' ')[1] !== 'w') return alert('It must be turn 1 and white to move to use this feature.');
+  const setConnected = (name) => {
+    engineConnected = true;
+    engineName = name;
+    updateStatus('\ud83d\udfe2 ' + name, '#2a7d2a');
+  };
 
-        board.game.move('e4');
-        board.game.move('e5');
-        board.game.move('Qf3');
-        board.game.move('Nc6');
-        board.game.move('Bc4');
-        board.game.move('Nb8');
-        board.game.move('Qxf7#');
-      }
-    });
-
-    exploitWindow.putNewline();
-
-    exploitWindow.generateLabel({
-      text: 'Force Draw against bot: ',
-      tooltip: 'This feature simply does not work online. It will only work on the computer play page.'
-    });
-
-    exploitWindow.generateButton({
-      text: 'Force Draw',
-      callback: e => {
-        e.preventDefault();
-        if (document.location.hostname !== 'www.chess.com') return alert('You must be on chess.com to use this feature.');
-        if (!document.location.pathname.startsWith('/play/computer')) return alert('You must be on the computer play page to use this feature.');
-        const board = document.querySelector('wc-chess-board');
-        if (!board?.game?.move) return alert('You must be in a game to use this feature.');
-
-        board.game.agreeDraw();
-      }
-    });
-  }
+  const setError = (msg) => {
+    engineConnected = false;
+    updateStatus('\u26a0\ufe0f ' + msg, '#b85c00');
+  };
 
   const createConfigWindow = () => {
     vs.generateConfigWindow({
@@ -119,10 +103,6 @@
 
     addConsoleLineElement(text);
   }
-
-  const namespace = 'chesshook';
-
-  window[namespace] = {};
 
   const externalEngineWorkerFunc = () => {
     const minIntermediaryVersion = 1;
@@ -283,274 +263,29 @@
   let externalEngineName = null;
 
   externalEngineWorker.onmessage = (e) => {
-    const maxlines = 50;
-    const websocketOutputTextArea = document.getElementById(namespace + '_websocketoutput');
-    const engineOutputTextArea = document.getElementById(namespace + '_engineoutput');
-
-    const addToWebSocketOutput = (line) => {
-      if (websocketOutputTextArea) {
-        const lines = websocketOutputTextArea.value.split('\n');
-        lines.push(line);
-        if (lines.length > maxlines) {
-          lines.shift();
-        }
-        websocketOutputTextArea.value = lines.join('\n');
-      }
-    }
-
-    const updateEngineTextarea = (infoLine) => {
-      if (engineOutputTextArea) {
-        const lines = engineOutputTextArea.value.split('\n');
-        const infoParts = infoLine.split(' ');
-        const depth = infoParts[infoParts.indexOf('depth') + 1];
-        const score = infoParts[infoParts.indexOf('score') + 1] + ' ' + infoParts[infoParts.indexOf('score') + 2];
-        const time = infoParts[infoParts.indexOf('time') + 1];
-        const bestLine = infoParts.slice(infoParts.indexOf('pv') + 1).join(' ');
-        if (depth !== 'info') {
-          lines[0] = 'depth ' + depth;
-        }
-        if (!score.startsWith('info')) {
-          lines[1] = 'score ' + score;
-        }
-        if (time !== 'info') {
-          lines[2] = 'time ' + time;
-        }
-        if (!bestLine.startsWith('info')) {
-          lines[3] = 'best line ' + bestLine;
-        }
-
-        engineOutputTextArea.value = lines.join('\n');
-      }
-    }
-
     if (e.data.type === 'DEBUG') {
       console.debug(e.data.payload);
-      addToWebSocketOutput(e.data.payload);
     } else if (e.data.type === 'ERROR') {
       console.error(e.data.payload, e.data.err);
-      addToWebSocketOutput(e.data.payload);
+      setError(e.data.payload);
     } else if (e.data.type === 'MESSAGE') {
       addToConsole(e.data.payload);
-      addToWebSocketOutput(e.data.payload);
-    } else if (e.data.type === 'UCI') {
-      updateEngineTextarea(e.data.payload);
     } else if (e.data.type === 'ENGINE') {
       externalEngineName = e.data.payload;
-      addToWebSocketOutput('Connected to ' + externalEngineName);
+      setConnected(externalEngineName);
     } else if (e.data.type === 'NEEDAUTH') {
       externalEngineWorker.postMessage({ type: 'AUTH', payload: vs.queryConfigKey(namespace + '_externalenginepasskey') });
-      addToWebSocketOutput('Attempting to authenticate with passkey ' + vs.queryConfigKey(namespace + '_externalenginepasskey'));
+      addToConsole('Attempting to authenticate with passkey...');
     } else if (e.data.type === 'BESTMOVE') {
-      addToConsole(`${externalEngineName} engine computed best move: ${e.data.payload}`);
+      addToConsole(`Engine: ${e.data.payload}`);
       handleEngineMove(e.data.payload);
     }
   }
 
-  const originalFetch = window.fetch;
-  window.fetch = async (...args) => {
-    const response = await originalFetch(...args);
-    const clonedResponse = response.clone();
-    clonedResponse.json().then(body => {
-      try {
-        handleInterception({ url: args[0].url || args[0] }, body);
-      } catch (ignored) {
-      }
-    }).catch(error => console.error('Fetch response clone error:', error));
-    return response;
-  };
 
-  const originalXHROpen = XMLHttpRequest.prototype.open;
-  const originalXHRSend = XMLHttpRequest.prototype.send;
 
-  XMLHttpRequest.prototype.open = function (method, url) {
-    this._url = new URL(url, window.location.origin).href;
-    originalXHROpen.apply(this, arguments);
-  };
 
-  XMLHttpRequest.prototype.send = function (body) {
-    this.addEventListener('load', () => {
-      if (this.readyState === 4 && this.status >= 200 && this.status < 300) {
-        try {
-          const responseJson = JSON.parse(this.responseText);
-          handleInterception({ url: this._url }, responseJson);
-        } catch (ignored) {
-        }
-      }
-    });
-    originalXHRSend.apply(this, arguments);
-  };
 
-  const handleInterception = (req, res) => {
-    const urlPath = new URL(req.url).pathname;
-
-    switch (urlPath) {
-      case '/rpc/chesscom.puzzles.v1.PuzzleService/GetNextRated':
-        if (vs.queryConfigKey(namespace + '_puzzlemode')) {
-          if (res.userPuzzle && res.userPuzzle.puzzle) {
-            const puzzle = res.userPuzzle.puzzle;
-
-            const fenMatch = puzzle.pgn.match(/\[FEN "(.+?)"\]/);
-            const fen = fenMatch ? fenMatch[1] : null;
-
-            const moves = [];
-            const rawMoves = [];
-            if (puzzle.moves && Array.isArray(puzzle.moves)) {
-              for (const moveObj of puzzle.moves) {
-                if (moveObj.move) {
-                  rawMoves.push(moveObj.move);
-                  const from = squareToAlgebraic(moveObj.move.from);
-                  const to = squareToAlgebraic(moveObj.move.to);
-
-                  const move = {
-                    from: from,
-                    to: to,
-                    promotion: null,
-                    drop: null,
-                  };
-
-                  if (moveObj.move.promotionPieceType) {
-                    const promotionMap = {
-                      'PROMOTION_PIECE_TYPE_QUEEN': 'q',
-                      'PROMOTION_PIECE_TYPE_ROOK': 'r',
-                      'PROMOTION_PIECE_TYPE_BISHOP': 'b',
-                      'PROMOTION_PIECE_TYPE_KNIGHT': 'n'
-                    };
-
-                    move.promotion = promotionMap[moveObj.move.promotionPieceType] || null;
-                  }
-
-                  moves.push(move);
-                }
-              }
-            }
-
-            if (vs.queryConfigKey(namespace + '_apipuzzlemode')) {
-              submitPuzzleSolution(puzzle.legacyPuzzleId, rawMoves);
-            } else {
-              puzzleQueue.push({
-                fen: fen,
-                moves: moves,
-                tagged: false,
-              });
-            }
-          }
-        }
-        break;
-      case /\/service\/battle\/games\/.*\/puzzles/.test(urlPath) ? urlPath : '':
-        if (vs.queryConfigKey(namespace + '_puzzlemode') && res.puzzles && Array.isArray(res.puzzles)) {
-          for (const puzzle of res.puzzles) {
-            if (puzzle.initialFen) {
-              const moves = [];
-
-              if (puzzle.firstMove) {
-                const decodedMoves = decodeTCN(puzzle.firstMove);
-                if (decodedMoves.length > 0) {
-                  moves.push(...decodedMoves);
-                }
-              }
-
-              if (puzzle.secureMoves && Array.isArray(puzzle.secureMoves)) {
-                for (const secureMove of puzzle.secureMoves) {
-                  if (secureMove.move) {
-                    const decodedMoves = decodeTCN(secureMove.move);
-                    if (decodedMoves.length > 0) {
-                      moves.push(...decodedMoves);
-                    }
-                  }
-
-                  if (secureMove.counter) {
-                    const decodedCounters = decodeTCN(secureMove.counter);
-                    if (decodedCounters.length > 0) {
-                      moves.push(...decodedCounters);
-                    }
-                  }
-                }
-              }
-
-              puzzleQueue.push({
-                fen: puzzle.initialFen,
-                moves: moves,
-                tagged: false,
-              });
-            }
-          }
-        }
-        break;
-      case '/callback/tactics/rated/next':
-        if (vs.queryConfigKey(namespace + '_puzzlemode')) {
-          puzzleQueue.push({
-            fen: res.initialFen,
-            moves: decodeTCN(res.tcnMoveList),
-            tagged: false,
-          });
-        }
-        break;
-      case '/callback/tactics/challenge/puzzles':
-        if (vs.queryConfigKey(namespace + '_puzzlemode')) {
-          for (const puzzle of res.puzzles) {
-            puzzleQueue.push({
-              fen: puzzle.initialFen,
-              moves: decodeTCN(puzzle.tcnMoveList),
-              tagged: false,
-            });
-          }
-        }
-        break;
-    }
-
-    try {
-      const ratingResult = extractRatingsFromResponse(res);
-      if (ratingResult) lastInterceptedGameRatings = ratingResult;
-    } catch (e) {}
-  }
-
-  const extractRatingsFromResponse = (res) => {
-    try {
-      if (!res) return null;
-      const board = document.querySelector('wc-chess-board');
-      if (!board || !board.game) return null;
-
-      const playingAs = board.game.getPlayingAs();
-      if (!playingAs) return null;
-
-      if (res.white && res.black && typeof res.white.rating === 'number' && typeof res.black.rating === 'number') {
-        if (playingAs === 1) {
-          return { ourRating: res.white.rating, oppoRating: res.black.rating };
-        } else {
-          return { ourRating: res.black.rating, oppoRating: res.white.rating };
-        }
-      }
-
-      if (res.players) {
-        const white = res.players.white;
-        const black = res.players.black;
-        if (white && black) {
-          const wRating = white.rating || white.user?.rating;
-          const bRating = black.rating || black.user?.rating;
-          if (typeof wRating === 'number' && typeof bRating === 'number') {
-            if (playingAs === 1) {
-              return { ourRating: wRating, oppoRating: bRating };
-            } else {
-              return { ourRating: bRating, oppoRating: wRating };
-            }
-          }
-        }
-      }
-
-      if (res.game && res.game.white && res.game.black) {
-        const wRating = res.game.white.rating;
-        const bRating = res.game.black.rating;
-        if (typeof wRating === 'number' && typeof bRating === 'number') {
-          if (playingAs === 1) {
-            return { ourRating: wRating, oppoRating: bRating };
-          } else {
-            return { ourRating: bRating, oppoRating: wRating };
-          }
-        }
-      }
-    } catch (e) {}
-    return null;
-  }
 
   const init = () => {
     vs.registerConfigValue({
@@ -572,15 +307,6 @@
     });
 
     vs.registerConfigValue({
-      key: namespace + '_exploitwindowhotkey',
-      type: 'hotkey',
-      display: 'Exploit Window Hotkey: ',
-      description: 'The hotkey to show the exploit window',
-      value: 'Alt+L',
-      action: createExploitWindow
-    });
-
-    vs.registerConfigValue({
       key: namespace + '_cleararrowskey',
       type: 'hotkey',
       display: 'Clear Arrows Hotkey: ',
@@ -591,16 +317,6 @@
         if (!board) return;
         board.game.markings.removeAll();
       }
-    });
-
-    vs.registerConfigValue({
-      key: namespace + '_playingas',
-      type: 'dropdown',
-      display: 'Playing As: ',
-      description: 'What color to calculate moves for',
-      value: 'both',
-      options: ['white', 'black', 'auto'],
-      showOnlyIf: () => true
     });
 
     vs.registerConfigValue({
@@ -620,24 +336,6 @@
       value: 'ws://localhost:8080/ws',
       showOnlyIf: () => true,
       callback: v => externalEngineWorker.postMessage({ type: 'INIT', payload: v })
-    });
-
-    vs.registerConfigValue({
-      key: namespace + '_externalengineautogocommand',
-      type: 'checkbox',
-      display: 'External Engine Auto Go Command: ',
-      description: 'Automatically determine the go command based on the time left in the game',
-      value: true,
-      showOnlyIf: () => true
-    });
-
-    vs.registerConfigValue({
-      key: namespace + '_externalenginegocommand',
-      type: 'text',
-      display: 'External Engine Go Command: ',
-      description: 'The command to send to the external engine to start thinking',
-      value: 'go movetime 1000',
-      showOnlyIf: () => true && !vs.queryConfigKey(namespace + '_externalengineautogocommand')
     });
 
     vs.registerConfigValue({
@@ -684,30 +382,6 @@
     });
 
     vs.registerConfigValue({
-      key: namespace + '_automoveinstamovestart',
-      type: 'checkbox',
-      display: 'Speed up game start: ',
-      description: 'Instantly move first 5',
-      value: true,
-      showOnlyIf: () => vs.queryConfigKey(namespace + '_automove')
-    });
-
-    vs.registerConfigValue({
-      key: namespace + '_refreshhotkey',
-      type: 'hotkey',
-      display: 'Refresh Hotkey: ',
-      description: 'Force some values to reload in order to try to "unstuck" some features',
-      value: 'Alt+R',
-      action: () => {
-        if (window.location.pathname.startsWith('/puzzles')) {
-          window.location.reload();
-        } else {
-          engineLastKnownFEN = null;
-        }
-      }
-    });
-
-    vs.registerConfigValue({
       key: namespace + '_renderwindow',
       type: 'hidden',
       value: true
@@ -715,87 +389,37 @@
 
     vs.loadPersistentState();
 
-    addToConsole(`Loaded! This is version ${GM_info.script.version}`);
-    addToConsole(`Github: https://github.com/0mlml/chesshook`);
-    if (vs.queryConfigKey(namespace + '_externalengineurl')) {
-      externalEngineWorker.postMessage({ type: 'INIT', payload: vs.queryConfigKey(namespace + '_externalengineurl') });
-    }
-  }
+    addToConsole(`Loaded! v${GM_info.script.version}`);
 
-  function squareToAlgebraic(squareEnum) {
-    if (typeof squareEnum === 'string' && squareEnum.startsWith('SQUARE_')) {
-      const file = squareEnum.charAt(7).toLowerCase();
-      const rank = squareEnum.charAt(8);
-      return file + rank;
-    }
-    return null;
-  }
-
-
-  const decodeTCN = (n) => {
-    const tcnChars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!?{~}(^)[_]@#$,./&-*++=";
-    const pieceChars = "qnrbkp";
-    let moves = [];
-
-    for (let i = 0; i < n.length; i += 2) {
-      let move = {
-        from: null,
-        to: null,
-        drop: null,
-        promotion: null,
-      };
-
-      let o = tcnChars.indexOf(n[i]);
-      let s = tcnChars.indexOf(n[i + 1]);
-
-      if (s > 63) {
-        move.promotion = pieceChars[Math.floor((s - 64) / 3)];
-        s = o + (o < 16 ? -8 : 8) + ((s - 1) % 3) - 1;
-      }
-
-      if (o > 75) {
-        move.drop = pieceChars[o - 79];
-      } else {
-        move.from = tcnChars[o % 8] + String(Math.floor(o / 8) + 1);
-      }
-
-      move.to = tcnChars[s % 8] + String(Math.floor(s / 8) + 1);
-      moves.push(move);
+    if (document.body && !statusBadge) {
+      statusBadge = createStatusBadge();
     }
 
-    return moves;
-  }
+    const engineUrl = vs.queryConfigKey(namespace + '_externalengineurl');
+    if (engineUrl) {
+      externalEngineWorker.postMessage({ type: 'INIT', payload: engineUrl });
+    }
 
-  const getPieceValue = (piece, scoreActivity = false) => {
-    return {
-      'p': 1,
-      'n': 3,
-      'b': 3,
-      'r': 5,
-      'q': 9,
-      'k': scoreActivity ? -3 : 99
-    }[piece.toLowerCase()];
+    const passkey = vs.queryConfigKey(namespace + '_externalenginepasskey');
+    if (passkey) {
+      externalEngineWorker.postMessage({ type: 'AUTH', payload: passkey });
+    }
   }
-
-  let lastInterceptedGameRatings = null;
 
   const getGameInfo = () => {
     const board = document.querySelector('wc-chess-board');
     if (!board?.game) return null;
 
-    let oppoElo = 1500;
     let playingAs = 0;
 
     try {
-      const headers = board.game.getHeaders();
       playingAs = board.game.getPlayingAs();
       if (!playingAs || playingAs === 0) {
         playingAs = board.game.getFEN().split(' ')[1] === 'w' ? 2 : 1;
       }
-      const whiteElo = parseInt(headers.WhiteElo) || 1500;
-      const blackElo = parseInt(headers.BlackElo) || 1500;
-      oppoElo = playingAs === 1 ? blackElo : whiteElo;
-    } catch (e) {}
+    } catch (e) {
+      return null;
+    }
 
     let historySANs = [];
     try {
@@ -825,7 +449,7 @@
       }
     } catch (e) {}
 
-    return { oppoElo, playingAs, historySANs, timeControl, whiteClockFraction, blackClockFraction };
+    return { playingAs, historySANs, timeControl, whiteClockFraction, blackClockFraction };
   }
 
   const xyToCoordInverted = (x, y) => {
@@ -846,113 +470,19 @@
     return xyToCoordInverted(from[0], from[1]) + xyToCoordInverted(to[0], to[1]) + promotion;
   }
 
-  let renderThreatsLastKnownFEN = null;
-  const renderThreats = () => {
-    let board = document.querySelector('wc-chess-board');
-    if (renderThreatsLastKnownFEN === board.game.getFEN()) return;
-    renderThreatsLastKnownFEN = board.game.getFEN();
-
-    board.game.markings.removeAll();
-
-    const threats = board.game.getJCEGameCopy().threats();
-
-    for (let pin of threats.pins) {
-      board.game.markings.addOne({ type: 'highlight', data: { color: vs.queryConfigKey(namespace + '_renderthreatspincolor'), square: pin } });
-    }
-
-    for (let undefended of threats.undefended) {
-      board.game.markings.addOne({ type: 'arrow', data: { color: vs.queryConfigKey(namespace + '_renderthreatsundefendedcolor'), from: undefended.substring(0, 2), to: undefended.substring(2, 4) } });
-    }
-
-    for (let underdefended of threats.underdefended) {
-      board.game.markings.addOne({ type: 'arrow', data: { color: vs.queryConfigKey(namespace + '_renderthreatsunderdefendedcolor'), from: underdefended.substring(0, 2), to: underdefended.substring(2, 4) } });
-    }
-
-    for (let mate of threats.mates) {
-      board.game.markings.addOne({ type: 'arrow', data: { color: vs.queryConfigKey(namespace + '_renderthreatsmatecolor'), from: mate.substring(0, 2), to: mate.substring(2, 4) } });
-    }
-  }
-
   const resolveAfterMs = (ms = 1000) => {
     if (ms <= 0) return new Promise(res => res());
     return new Promise(res => setTimeout(res, ms));
   }
 
-  const mergeMoveToUCI = (move) => move.from + move.to + (move.promotion ? move.promotion : '');
-
-  const cccpEngine = () => {
-    const board = document.querySelector('wc-chess-board');
-
-    const legalMoves = board.game.getLegalMoves();
-
-    if (legalMoves.length === 0) return;
-
-    const checkmates = legalMoves.filter(m => m.san.includes('#'));
-
-    if (checkmates.length > 0) {
-      return mergeMoveToUCI(checkmates[0]);
-    }
-
-
-    const checks = legalMoves.filter(m => m.san.includes('+'));
-    const captureMoves = legalMoves.filter(m => m.san.includes('x'));
-
-    const goodCaptureExists = captureMoves.some(m => {
-      const capturedValue = getPieceValue(m.captured, true);
-      return capturedValue > 4 || getPieceValue(m.piece, true) < capturedValue;
-    });
-
-    if (checks.length > 0 && !goodCaptureExists) {
-      return mergeMoveToUCI(checks[0]);
-    }
-
-    if (captureMoves.length > 0) {
-      return mergeMoveToUCI(captureMoves.sort((a, b) => (getPieceValue(b.captured) - getPieceValue(b.piece) + getPieceValue(b.captured) * 0.1) - (getPieceValue(a.captured) - getPieceValue(b.piece) + getPieceValue(a.captured) * 0.1))[0]);
-    }
-
-    const pushes = legalMoves.sort((a, b) => {
-      let scoreA = getPieceValue(a.piece, true);
-      let scoreB = getPieceValue(b.piece, true);
-
-      const columnScores = { 'a': -1, 'b': 0, 'c': 1, 'd': 3, 'e': 3, 'f': 1, 'g': 0, 'h': -1 };
-
-      scoreA += columnScores[a.to[0]];
-      scoreB += columnScores[b.to[0]];
-
-      const scorePush = (to, isWhite) => {
-        const toRow = parseInt(to[1]);
-
-        return isWhite ? toRow : 9 - toRow;
-      }
-
-      scoreA += scorePush(a.to, a.color === 1);
-      scoreB += scorePush(b.to, b.color === 1);
-
-      a.score = scoreA;
-      b.score = scoreB;
-      return scoreB - scoreA;
-    });
-
-    return mergeMoveToUCI(pushes[0]);
-  }
-
   const isMyTurn = () => {
     const board = document.querySelector('wc-chess-board');
+    if (!board?.game) return false;
+    const playingAs = board.game.getPlayingAs();
+    if (!playingAs || playingAs === 0) return true; // fallback: always try
     const fen = board.game.getFEN();
-
-    if (vs.queryConfigKey(namespace + '_playingas') !== 'both') {
-      if ((vs.queryConfigKey(namespace + '_playingas') === 'white' && fen.split(' ')[1] === 'b') ||
-        (vs.queryConfigKey(namespace + '_playingas') === 'black' && fen.split(' ')[1] === 'w')) {
-        return false;
-      }
-    }
-
-    if (vs.queryConfigKey(namespace + '_playingas') === 'auto') {
-      const playingAs = board.game.getPlayingAs() === 1 ? 'w' : board.game.getPlayingAs() === 2 ? 'b' : null;
-      return playingAs === null || fen.split(' ')[1] === playingAs;
-    }
-
-    return true;
+    const turn = fen.split(' ')[1];
+    return turn === (playingAs === 1 ? 'w' : 'b');
   }
 
   let lastEngineMoveCalcStartTime = performance.now();
@@ -960,32 +490,38 @@
   let engineLastKnownFEN = null;
   const getEngineMove = () => {
     const board = document.querySelector('wc-chess-board');
-
-    const fen = board.game.getFEN();
-    if (!fen || engineLastKnownFEN === fen) return;
-    engineLastKnownFEN = board.game.getFEN();
-
-    if (!isMyTurn()) return;
-
-    addToConsole('Calculating move...');
-
-    if (vs.queryConfigKey(namespace + '_automoveinstamovestart') && parseInt(fen.split(' ')[5]) < 6) lastEngineMoveCalcStartTime = 0;
-    else lastEngineMoveCalcStartTime = performance.now();
-
-    if (!externalEngineName) {
-      addToConsole('External engine disconnected. Check config.');
+    if (!board?.game) {
+      updateStatus('\u26a0\ufe0f Board not found', '#b85c00');
       return;
     }
 
+    const fen = board.game.getFEN();
+    if (!fen) {
+      updateStatus('\u26a0\ufe0f Cannot read position', '#b85c00');
+      return;
+    }
+
+    if (!isMyTurn()) return;
+
+    if (!engineConnected) {
+      updateStatus('\ud83d\udd34 Server offline', '#c44');
+      return;
+    }
+
+    addToConsole('Calculating move...');
+    lastEngineMoveCalcStartTime = performance.now();
+
     const info = getGameInfo();
     if (!info) {
+      updateStatus('\u26a0\ufe0f Cannot read game info', '#b85c00');
       addToConsole('Could not read game info from board.');
       return;
     }
 
-    addToConsole(`Opp elo: ${info.oppoElo} | Playing as: ${info.playingAs === 1 ? 'W' : 'B'} | TC: ${info.timeControl} | Clock W:${(info.whiteClockFraction * 100).toFixed(0)}% B:${(info.blackClockFraction * 100).toFixed(0)}%`);
+    addToConsole(`Playing as: ${info.playingAs === 1 ? 'White' : 'Black'} | TC: ${info.timeControl} | Clock W:${(info.whiteClockFraction * 100).toFixed(0)}% B:${(info.blackClockFraction * 100).toFixed(0)}%`);
 
-    externalEngineWorker.postMessage({ type: 'SETELO', payload: `${info.oppoElo} ${info.playingAs}` });
+    // Send playing_as; server handles elo (uses highest possible)
+    externalEngineWorker.postMessage({ type: 'SETELO', payload: `${info.playingAs}` });
 
     if (info.historySANs.length > 0) {
       externalEngineWorker.postMessage({ type: 'UCI', payload: `history ${info.historySANs.join(' ')}` });
@@ -994,7 +530,7 @@
     externalEngineWorker.postMessage({ type: 'UCI', payload: `timecontrol ${info.timeControl}` });
     externalEngineWorker.postMessage({ type: 'UCI', payload: `clock ${info.whiteClockFraction.toFixed(4)} ${info.blackClockFraction.toFixed(4)}` });
 
-    addToConsole('External engine: ' + externalEngineName);
+    addToConsole('Engine: ' + engineName);
     externalEngineWorker.postMessage({ type: 'GETMOVE', payload: { fen: fen, go: 'go' } });
   }
 
@@ -1026,7 +562,7 @@
     const board = document.querySelector('wc-chess-board');
     if (!board?.game) return false;
 
-    if (!vs.queryConfigKey(namespace + '_renderthreats')) board.game.markings.removeAll();
+    board.game.markings.removeAll();
 
     const marking = { type: 'arrow', data: { color: vs.queryConfigKey(namespace + '_enginemovecolor'), from: uciMove.substring(0, 2), to: uciMove.substring(2, 4) } };
     if (handleMoveLastKnownMarking) board.game.markings.removeOne(handleMoveLastKnownMarking);
@@ -1078,261 +614,28 @@
     });
   }
 
-  const requestNextPuzzle = () => {
-    addToConsole(`[${namespace}] Requesting next puzzle`);
-
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', 'https://www.chess.com/rpc/chesscom.puzzles.v1.PuzzleService/GetNextRated', true);
-
-      xhr.setRequestHeader('accept', 'application/json');
-      xhr.setRequestHeader('accept-language', 'en-US,en;q=0.9');
-      xhr.setRequestHeader('content-type', 'application/json');
-      xhr.withCredentials = true;
-
-      xhr.onload = function () {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          try {
-            const result = JSON.parse(xhr.responseText);
-
-            if (result && result.userPuzzle && result.userPuzzle.puzzle) {
-              addToConsole(`[${namespace}] Successfully retrieved next puzzle: ${result.userPuzzle.puzzle.legacyPuzzleId}`);
-              resolve(result);
-            } else {
-              const errorMsg = `Failed to get next puzzle: ${result.error || 'No puzzle data in response'}`;
-              addToConsole(`[${namespace}] ${errorMsg}`);
-              reject(new Error(errorMsg));
-            }
-          } catch (e) {
-            addToConsole(`[${namespace}] Error parsing response:`, e);
-            reject(e);
-          }
-        } else {
-          addToConsole(`[${namespace}] Request failed:`, xhr.status, xhr.statusText);
-          reject(new Error(`Request failed: ${xhr.status} ${xhr.statusText}`));
-        }
-      };
-
-      xhr.onerror = function () {
-        addToConsole(`[${namespace}] Network error occurred`);
-        reject(new Error('Network error'));
-      };
-
-      xhr.ontimeout = function () {
-        addToConsole(`[${namespace}] Request timed out`);
-        reject(new Error('Request timed out'));
-      };
-
-      xhr.send('{}');
-    });
-  }
-
-  const submitPuzzleSolution = async (puzzleId, moves) => {
-    try {
-      const payload = {
-        legacyPuzzleId: puzzleId,
-        moves: moves,
-        attemptDuration: `0.2s`
-      };
-
-      switch(vs.queryConfigKey(namespace + '_apipuzzletimemode')) {
-        case 'hour':
-          payload.attemptDuration = `${(3600 + Math.random() * 1800).toFixed(3)}s`;
-          break;
-        case 'legit':
-          payload.attemptDuration = `${(15 + Math.random() * 30).toFixed(3)}s`;
-          break;
-        case 'zero':
-          payload.attemptDuration = `${0.1 + Math.random() * 0.3}s`;
-          break;
-      }
-
-      addToConsole(`[${namespace}] Submitting solution for puzzle ${puzzleId}`);
-
-      return new Promise((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open('POST', 'https://www.chess.com/rpc/chesscom.puzzles.v1.PuzzleService/SubmitRatedSolution', true);
-
-        xhr.setRequestHeader('accept', 'application/json');
-        xhr.setRequestHeader('accept-language', 'en-US,en;q=0.9');
-        xhr.setRequestHeader('content-type', 'application/json');
-
-        xhr.onload = function () {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            try {
-              const result = JSON.parse(xhr.responseText);
-              addToConsole(`[${namespace}] Successfully submitted solution for puzzle ${puzzleId}. ELO: ${result.userRatings[0].rating} (+${result.userRatings[0].ratingChange})`);
-              requestNextPuzzle();
-              resolve(result);
-            } catch (e) {
-              addToConsole(`[${namespace}] Error parsing response:`, e);
-              reject(e);
-            }
-          } else {
-            addToConsole(`[${namespace}] XHR request failed:`, xhr.status, xhr.statusText, xhr.responseText);
-            reject(new Error(`XHR request failed: ${xhr.status} ${xhr.statusText}`));
-          }
-        };
-
-        xhr.onerror = function () {
-          addToConsole(`[${namespace}] Network error occurred`);
-          reject(new Error('Network error'));
-        };
-
-        xhr.ontimeout = function () {
-          addToConsole(`[${namespace}] Request timed out`);
-          reject(new Error('Request timed out'));
-        };
-
-        xhr.send(JSON.stringify(payload));
-      });
-    } catch (error) {
-      addToConsole(`[${namespace}] Error submitting puzzle solution:`, error);
-    }
-  };
-
-  const handlePuzzleMove = (moveObj) => {
-    const board = document.querySelector('wc-chess-board');
-    if (!board?.game) return false;
-
-    if (moveObj.promotion) {
-      board.game.move({
-        from: moveObj.from,
-        to: moveObj.to,
-        promotion: moveObj.promotion,
-        animate: false,
-        userGenerated: true
-      });
-    } else {
-      const fromPos = calculateDOMSquarePosition(moveObj.from);
-      const toPos = calculateDOMSquarePosition(moveObj.to);
-      board.dispatchEvent(new PointerEvent('pointerdown', {
-        bubbles: true,
-        cancelable: true,
-        view: window,
-        clientX: fromPos.x,
-        clientY: fromPos.y,
-      }));
-      board.dispatchEvent(new PointerEvent('pointerup', {
-        bubbles: true,
-        cancelable: true,
-        view: window,
-        clientX: toPos.x,
-        clientY: toPos.y,
-      }));
-    }
-  }
-
-  let requeueLastGamePath = null;
-  let requeueAttempts = 0;
-
-  const handleRequeue = () => {
-    if (requeueLastGamePath === null) {
-      requeueLastGamePath = window.location.pathname;
-      requeueAttempts = 0;
-    } else if (requeueLastGamePath !== window.location.pathname) {
-      requeueLastGamePath = null;
-    }
-
-    if (requeueLastGamePath === window.location.pathname) {
-      try {
-        document.querySelector('div.tabs-tab:nth-child(2)').click();
-        document.querySelector('.create-game-component > button:nth-child(2)').click();
-      } catch {
-        if (requeueAttempts.requeueAttempts > 10) {
-          requeueLastGamePath = null;
-          requeueAttempts = 0;
-        } else {
-          requeueAttempts.requeueAttempts++;
-        }
-      }
-    }
-  }
-
-  const fuzzyFensEqual = (fen1, fen2) => fen1.split(' ').slice(0, 1).join(' ') === fen2.split(' ').slice(0, 1).join(' ');
-
-  const puzzleQueue = [];
-  let lastPuzzleFEN = null;
-  let playerTurn = false;
-
-  window[namespace].getPuzzleQueue = () => puzzleQueue;
-
-  const manualPuzzleHandler = () => {
-    const board = document.querySelector('wc-chess-board');
-    if (!board) return;
-
-    const currentFEN = board.game.getFEN();
-
-    for (let i = 0; i < puzzleQueue.length; i++) {
-      const puzzle = puzzleQueue[i];
-
-      if (fuzzyFensEqual(puzzle.fen, currentFEN)) {
-        puzzle.tagged = true;
-      }
-
-      if (puzzle.tagged) {
-        if (lastPuzzleFEN && fuzzyFensEqual(currentFEN, lastPuzzleFEN)) return;
-
-        if (document.querySelector("#board-animation").children.length) {
-          return;
-        }
-
-        while (puzzle.moves.length > 0 && !playerTurn) {
-          puzzle.moves.shift();
-          playerTurn = !playerTurn;
-        }
-
-        if (puzzle.moves.length > 0 && playerTurn) {
-          const move = puzzle.moves.shift();
-          handlePuzzleMove(move);
-          lastPuzzleFEN = currentFEN;
-          playerTurn = !playerTurn;
-          return;
-        } else {
-          puzzleQueue.splice(i, 1);
-          lastPuzzleFEN = null;
-          playerTurn = false;
-          break;
-        }
-      }
-    }
-  }
-
-  const clickPuzzleNext = () => {
-    const nextButton = document.querySelector('#sidebar > section > div.rated-sidebar-footer-component > div.primary-control-buttons-component > button.cc-button-component.cc-button-primary.cc-button-large.cc-bg-primary.primary-control-buttons-half');
-    const arrowIcon = nextButton?.querySelector('.arrow-right');
-    if (arrowIcon) {
-      nextButton.click();
-    }
-  }
-
   const updateLoop = () => {
     const board = document.querySelector('wc-chess-board');
+    if (!board?.game) {
+      updateStatus('\u26aa Waiting for game...', '#666');
+      return;
+    }
 
-    if (!board?.game) return;
+    if (!statusBadge && document.body) {
+      statusBadge = createStatusBadge();
+    }
 
     if (board.game.getPositionInfo().gameOver) {
       externalEngineWorker.postMessage({ type: 'STOP' });
-
-      if (vs.queryConfigKey(namespace + '_autoqueue')) {
-        handleRequeue();
-      }
+      updateStatus('\ud83c\udfc1 Game over', '#555');
+      return;
     }
 
-    if (document.location.pathname.startsWith('/puzzles')) {
-      if (vs.queryConfigKey(namespace + '_puzzlemode')) {
-        manualPuzzleHandler();
-        if (!document.location.pathname.includes('battle')) {
-          clickPuzzleNext();
-        }
-      }
+    const fen = board.game.getFEN();
+    if (fen && engineLastKnownFEN !== fen) {
+      engineLastKnownFEN = fen;
+      getEngineMove();
     }
-
-    if (vs.queryConfigKey(namespace + '_renderthreats')) {
-      renderThreats();
-    }
-
-    getEngineMove();
   }
 
   window[namespace].updateLoop = setInterval(updateLoop, 20);

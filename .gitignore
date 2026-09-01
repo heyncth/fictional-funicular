@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+stockfish_tmp/
+stockfish.exe
+stockfish-windows-x86-64.exe
