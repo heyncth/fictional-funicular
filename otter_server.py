@@ -200,8 +200,22 @@ class OtterEngine:
             print(f"  Filter result: {best[0]} (from {len(accepted)}/{len(otter_moves)} accepted, blend={BLEND_HUMAN:.0%}human+{BLEND_EVAL:.0%}eval)")
             return (best[0], sf_best)
         else:
-            print(f"  All Otter moves rejected — falling back to Stockfish: {sf_best}")
-            return (sf_best, sf_best)
+            # Adaptive fallback: least-bad Otter if close to Stockfish, else Stockfish
+            # Find the Otter move with highest eval (least bad)
+            evaluable = [(uci, score) for uci, score, drop, prob in scored if score is not None]
+            if evaluable:
+                least_bad_uci, least_bad_eval = max(evaluable, key=lambda x: x[1])
+                gap = sf_best_score - least_bad_eval
+                gap_pawns = gap / 100
+                if gap < 100:  # within 1.0 pawn of Stockfish best
+                    print(f"  All rejected but {least_bad_uci} is close (gap={gap_pawns:.2f}) — playing least-bad Otter")
+                    return (least_bad_uci, sf_best)
+                else:
+                    print(f"  All rejected, gap too large ({gap_pawns:.2f} pawns) — falling back to Stockfish: {sf_best}")
+                    return (sf_best, sf_best)
+            else:
+                print(f"  All rejected, no evals available — falling back to Stockfish: {sf_best}")
+                return (sf_best, sf_best)
 
 
 class ConnectionHandler:

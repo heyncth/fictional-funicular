@@ -329,6 +329,16 @@
     });
 
     vs.registerConfigValue({
+      key: namespace + '_playingas',
+      type: 'dropdown',
+      display: 'Playing As: ',
+      description: 'What color to calculate moves for',
+      value: 'auto',
+      options: ['auto', 'white', 'black', 'both'],
+      showOnlyIf: () => true
+    });
+
+    vs.registerConfigValue({
       key: namespace + '_externalengineurl',
       type: 'text',
       display: 'External Engine URL: ',
@@ -478,10 +488,17 @@
   const isMyTurn = () => {
     const board = document.querySelector('wc-chess-board');
     if (!board?.game) return false;
+    const fen = board.game.getFEN();
+    const turn = fen.split(' ')[1]; // 'w' or 'b'
+    const playingAsConfig = vs.queryConfigKey(namespace + '_playingas') || 'auto';
+
+    if (playingAsConfig === 'both') return true;
+    if (playingAsConfig === 'white') return turn === 'w';
+    if (playingAsConfig === 'black') return turn === 'b';
+
+    // auto: detect from board
     const playingAs = board.game.getPlayingAs();
     if (!playingAs || playingAs === 0) return true; // fallback: always try
-    const fen = board.game.getFEN();
-    const turn = fen.split(' ')[1];
     return turn === (playingAs === 1 ? 'w' : 'b');
   }
 
